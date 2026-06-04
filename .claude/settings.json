@@ -4,7 +4,8 @@
     "allow": [
       "mcp__computer-use__screenshot",
       "mcp__computer-use__zoom",
-      "mcp__computer-use__wait"
+      "mcp__computer-use__wait",
+      "Bash(git push:*)"
     ]
   }
 }
