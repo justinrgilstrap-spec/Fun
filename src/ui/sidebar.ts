@@ -15,7 +15,7 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
       </div>
       <div class="stat-cell">
         <span class="stat-value">${stats.states}</span>
-        <span class="stat-label">States</span>
+        <span class="stat-label">Regions</span>
       </div>
       <div class="stat-cell">
         <span class="stat-value">${stats.cities}</span>

@@ -7,6 +7,7 @@ import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/v
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
 import { initLayers, applyLayer } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
+import { countCountries } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -111,7 +112,7 @@ let current: VisitedFile = { countries: [], states: [], cities: [], updatedAt: 0
 
 function statsFrom(file: VisitedFile) {
   return {
-    countries: file.countries.length,
+    countries: countCountries(file.countries),
     states: file.states.length,
     cities: file.cities.length,
   };
