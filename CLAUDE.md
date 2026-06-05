@@ -39,7 +39,8 @@ npm run tauri:build  # Build the distributable .app bundle
 There is **no test suite and no linter** configured yet. `npm run build` runs
 `tsc` first, so a successful build is the current bar for "type-safe and
 compiles." `tsconfig.json` is strict (`noUnusedLocals`, `noUnusedParameters`,
-`noFallthroughCasesInSwitch`).
+`noFallthroughCasesInSwitch`). `.github/workflows/ci.yml` runs `npm run build`
+on every PR, so that bar is enforced before merge.
 
 ## Architecture & data flow
 
@@ -62,11 +63,16 @@ The import pipeline is the heart of the app:
    contain precise GPS history).
 4. **Render** (`src/map/` + `src/ui/`) — `layers.ts` tags every reference feature
    with `visited: 0|1` and drives MapLibre fill/line/circle layers; `sidebar.ts`
-   renders the stats. Three view layers: Countries, Regions (states), Cities.
-   Only countries load at startup; **states and cities are lazy-loaded** the first
-   time their view is opened (`setLayer` → `ensure*`), with a spinner on the toggle.
+   renders the stats (raw counts + World / Continents / U.S.-states completion
+   bars). Three view layers: Countries, Regions (states), Cities. Only countries
+   load at startup; **states and cities are lazy-loaded** the first time their
+   view is opened (`setLayer` → `ensure*`), with a spinner on the toggle.
    Switching back to a loaded layer just flips visibility — `setData` re-tags a
    source only when the visited sets change (e.g. after an import).
+   `initInteractions()` wires click-to-inspect popups + a hover cursor **once**,
+   keyed by layer id so the listeners survive the style rebuild a theme change
+   triggers (don't move these into the per-layer `ensure*` functions, or each
+   theme toggle re-registers a duplicate handler).
 
 ### Reference data & ID schemes (`src/geo/datasets.ts`)
 
@@ -102,8 +108,10 @@ respect `import.meta.env.BASE_URL` (the data-fetch URLs already do). The PWA
 manifest sidesteps the base path with **relative** internal paths
 (`start_url`/`scope`/icon `src`), and Vite rebases the manifest/`apple-touch-icon`
 hrefs in `index.html` at build time — so the same files work under `/footprint/`
-(Pages) and `/` (desktop/dev). No CI runs on PRs (the workflow only triggers on
-push to `main`).
+(Pages) and `/` (desktop/dev). `deploy.yml` only triggers on push to `main`;
+PRs instead run `.github/workflows/ci.yml` (`npm run build`) as a merge gate —
+there is **no PR preview deploy**, so the live site is the first place merged UI
+renders.
 
 ## Conventions & gotchas
 
@@ -136,8 +144,6 @@ push to `main`).
   (~39 MB) substantially; geometric simplification saves more but coarsens polygon
   boundaries when zoomed in (city markers are points, so they're unaffected). Main
   payoff: faster Regions/Cities loads.
-- **PR build check.** A workflow running `tsc` + `vite build` on pull requests
-  would catch breakage before merge, since `main` auto-deploys.
 - **Place search.** A search box to fly-to a country/city — useful for navigation
   and (in the Tauri build) as a hook for manually marking a place.
 - **Manual add/remove.** Click a place to toggle its visited state in write
