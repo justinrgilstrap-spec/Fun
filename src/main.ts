@@ -5,9 +5,9 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
-import { initLayers, setLayer } from "./map/layers";
+import { initLayers, setLayer, initInteractions } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
-import { countCountries } from "./geo/datasets";
+import { countCountries, countContinents } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -110,11 +110,23 @@ new ResizeObserver(() => map.resize()).observe(mapEl);
 
 let current: VisitedFile = { countries: [], states: [], cities: [], updatedAt: 0 };
 
+// US states use ISO 3166-2 "US-XX" codes; DC isn't a state, so it's excluded.
+// Returns null when none are visited, which hides the U.S. progress row.
+function countUsStates(states: string[]): number | null {
+  let n = 0;
+  for (const s of states) {
+    if (s.startsWith("US-") && s !== "US-DC") n++;
+  }
+  return n > 0 ? n : null;
+}
+
 function statsFrom(file: VisitedFile) {
   return {
     countries: countCountries(file.countries),
     states: file.states.length,
     cities: file.cities.length,
+    continents: countContinents(file.countries),
+    usStates: countUsStates(file.states),
   };
 }
 
@@ -134,6 +146,7 @@ async function renderFromCurrent() {
 async function bootstrap() {
   current = await loadVisited();
   await renderFromCurrent();
+  initInteractions(map);
 }
 
 setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {

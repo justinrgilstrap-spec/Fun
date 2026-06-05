@@ -138,5 +138,21 @@ push to `main`).
   payoff: faster Regions/Cities loads.
 - **PR build check.** A workflow running `tsc` + `vite build` on pull requests
   would catch breakage before merge, since `main` auto-deploys.
+- **Place search.** A search box to fly-to a country/city — useful for navigation
+  and (in the Tauri build) as a hook for manually marking a place.
+- **Manual add/remove.** Click a place to toggle its visited state in write
+  (Tauri) mode, so spatial-join misses can be fixed without re-importing.
+- **Shareable snapshot.** Export the current map + stats as a PNG / "been to N
+  countries" card. All client-side, no backend.
+- **Empty-state onboarding.** First run (no `visited.json`) shows a blank world;
+  add a "drop your Timeline export here → how to get it" prompt linking to Google
+  Takeout.
+- **Import feedback toast.** Replace the console.log/alert with a "Added 4
+  countries, 11 cities" summary toast after an import.
+- **Time dimension (deferred).** Persisting per-visit timestamps would unlock a
+  year slider / "new this year." Deferred on purpose: the user's Google Timeline
+  data only starts ~Sept 2025, so lifetime "first visited" semantics would be
+  misleading. Revisit only if older history is backfilled; an honest version would
+  be a clearly-labeled "recent activity (since tracking began)" scope.
 </content>
 </invoke>

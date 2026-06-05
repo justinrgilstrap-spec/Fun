@@ -171,3 +171,94 @@ export function applyLayer(map: MlMap, kind: LayerKind): void {
     map.setLayoutProperty(id, "visibility", visible.has(id) ? "visible" : "none");
   }
 }
+
+// --- Click-to-inspect popups ------------------------------------------------
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+}
+
+function popupHTML(title: string, subtitle: string, visited: boolean): string {
+  const sub = subtitle ? `<div class="fp-popup-sub">${escapeHtml(subtitle)}</div>` : "";
+  const status = visited
+    ? `<div class="fp-popup-status is-visited">Visited</div>`
+    : `<div class="fp-popup-status">Not visited yet</div>`;
+  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}</div>`;
+}
+
+function str(props: Record<string, unknown> | null, key: string): string {
+  const v = props?.[key];
+  return typeof v === "string" ? v : "";
+}
+
+function joinParts(parts: string[]): string {
+  return parts.filter(Boolean).join(", ");
+}
+
+// Builds the popup body for a clicked feature, per layer's property scheme.
+function contentFor(kind: LayerKind, props: Record<string, unknown> | null): string {
+  const visited = props?.visited === 1;
+  if (kind === "countries") {
+    const continent = str(props, "CONTINENT");
+    return popupHTML(
+      str(props, "NAME") || str(props, "ADMIN") || "Unknown",
+      continent === "Seven seas (open ocean)" ? "" : continent,
+      visited,
+    );
+  }
+  if (kind === "states") {
+    return popupHTML(
+      str(props, "name") || "Unknown",
+      joinParts([str(props, "type_en"), str(props, "admin")]),
+      visited,
+    );
+  }
+  return popupHTML(
+    str(props, "NAME") || str(props, "NAMEASCII") || "Unknown",
+    joinParts([str(props, "ADM1NAME"), str(props, "ADM0NAME")]),
+    visited,
+  );
+}
+
+let popup: maplibregl.Popup | null = null;
+let interactionsReady = false;
+
+// Wire click + hover-cursor handlers once. Registering by layer id works even
+// before the (lazy) layer exists, and the listeners live on the Map, so they
+// survive the style rebuild a theme change triggers — hence register-once.
+const CLICK_LAYERS: Array<[string, LayerKind]> = [
+  ["countries-fill", "countries"],
+  ["states-fill", "states"],
+  ["cities-circle", "cities"],
+];
+
+export function initInteractions(map: MlMap): void {
+  if (interactionsReady) return;
+  interactionsReady = true;
+
+  for (const [layerId, kind] of CLICK_LAYERS) {
+    map.on("click", layerId, (e) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
+      // Point features sit on a precise spot; anchor the popup there. Polygons
+      // are anchored at the click location.
+      const lngLat =
+        feature.geometry.type === "Point"
+          ? (feature.geometry.coordinates as [number, number])
+          : e.lngLat;
+      popup?.remove();
+      popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: "240px" })
+        .setLngLat(lngLat)
+        .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null))
+        .addTo(map);
+    });
+    map.on("mouseenter", layerId, () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", layerId, () => {
+      map.getCanvas().style.cursor = "";
+    });
+  }
+}
