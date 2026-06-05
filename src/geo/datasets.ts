@@ -17,6 +17,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 export async function loadCountries() {
   if (!countries) {
     countries = await fetchJson<FeatureCollection<Polygon | MultiPolygon>>(COUNTRIES_URL);
+    buildContinentLookup(countries);
   }
   return countries;
 }
@@ -69,6 +70,31 @@ const TERRITORY_PARENT: Record<string, string> = {
 export function countCountries(isoCodes: Iterable<string>): number {
   const set = new Set<string>();
   for (const code of isoCodes) set.add(TERRITORY_PARENT[code] ?? code);
+  return set.size;
+}
+
+// Country ISO → continent, built once countries.geojson loads. Used for the
+// "continents visited" progress stat. Open-ocean features carry no real continent.
+let continentByIso: Map<string, string> | null = null;
+function buildContinentLookup(fc: FeatureCollection<Polygon | MultiPolygon>): void {
+  const map = new Map<string, string>();
+  for (const f of fc.features) {
+    const continent = (f.properties?.CONTINENT as string | undefined) ?? "";
+    if (continent && continent !== "Seven seas (open ocean)") {
+      map.set(countryIso(f), continent);
+    }
+  }
+  continentByIso = map;
+}
+
+/** Distinct continents touched by the visited countries (requires countries loaded). */
+export function countContinents(isoCodes: Iterable<string>): number {
+  if (!continentByIso) return 0;
+  const set = new Set<string>();
+  for (const code of isoCodes) {
+    const continent = continentByIso.get(code) ?? continentByIso.get(TERRITORY_PARENT[code] ?? "");
+    if (continent) set.add(continent);
+  }
   return set.size;
 }
 
