@@ -413,7 +413,8 @@ body {
   #app[data-sidebar="open"] #sidebar {
     transform: translateX(0);
     width: min(85vw, 320px);
-    padding: 24px 22px 28px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) calc(22px + env(safe-area-inset-right, 0px))
+      calc(28px + env(safe-area-inset-bottom, 0px)) calc(22px + env(safe-area-inset-left, 0px));
     opacity: 1;
     pointer-events: auto;
   }
@@ -421,7 +422,8 @@ body {
   #app[data-sidebar="closed"] #sidebar {
     transform: translateX(-100%);
     width: min(85vw, 320px);
-    padding: 24px 22px 28px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) calc(22px + env(safe-area-inset-right, 0px))
+      calc(28px + env(safe-area-inset-bottom, 0px)) calc(22px + env(safe-area-inset-left, 0px));
     opacity: 1;
   }
 
