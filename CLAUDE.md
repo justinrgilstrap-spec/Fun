@@ -12,12 +12,19 @@ as a **native macOS desktop app** (built with Tauri, read/write).
   `index.html`.
 - **Map:** [MapLibre GL](https://maplibre.org/) with CARTO raster basemaps
   (Positron for light, Dark Matter for dark).
-- **Geo:** [Turf.js](https://turfjs.org/) for point-in-polygon and
-  nearest-city math. Reference geometry lives in `public/data/*.geojson`
-  (Natural Earth countries, states/provinces, populated places).
+- **Geo:** [Turf.js](https://turfjs.org/) for point-in-polygon and nearest-city
+  math — imported as the specific sub-packages used (`@turf/boolean-point-in-polygon`,
+  `@turf/distance`, `@turf/helpers`), not the `@turf/turf` umbrella. Reference
+  geometry lives in `public/data/*.geojson` (Natural Earth countries,
+  states/provinces, populated places) and is **large** — roughly 13 / 19 / 39 MB
+  for countries / cities / states (states ≈ 12 MB gzipped).
 - **Desktop shell:** [Tauri 2](https://tauri.app/) (Rust) in `src-tauri/`. The
   Rust side is intentionally thin — one command, `get_data_dir`.
 - **Persistence:** a single `visited.json` file (no database).
+- **PWA:** installable to the iOS/Android home screen via
+  `public/manifest.webmanifest`, an `apple-touch-icon`, and `apple-mobile-web-app-*`
+  meta tags in `index.html` (icons in `public/icons/`). The read-only web build is
+  what gets installed.
 
 ## Commands
 
@@ -56,11 +63,16 @@ The import pipeline is the heart of the app:
 4. **Render** (`src/map/` + `src/ui/`) — `layers.ts` tags every reference feature
    with `visited: 0|1` and drives MapLibre fill/line/circle layers; `sidebar.ts`
    renders the stats. Three view layers: Countries, Regions (states), Cities.
+   Only countries load at startup; **states and cities are lazy-loaded** the first
+   time their view is opened (`setLayer` → `ensure*`), with a spinner on the toggle.
+   Switching back to a loaded layer just flips visibility — `setData` re-tags a
+   source only when the visited sets change (e.g. after an import).
 
 ### Reference data & ID schemes (`src/geo/datasets.ts`)
 
-GeoJSON datasets are lazy-loaded and cached. Each feature is reduced to a stable
-ID used as the "visited" key:
+`datasets.ts` fetches each GeoJSON once and caches it at module scope. The map
+requests only countries at startup; states/cities are fetched on demand (see
+Render, above). Each feature is reduced to a stable ID used as the "visited" key:
 
 - **Country:** `ISO_A3`, falling back through `ADM0_A3` → `SOV_A3` → `ADMIN`
   (Natural Earth uses `-99` for missing codes).
@@ -86,7 +98,12 @@ nations, not territories — but the territory polygons still render as visited.
 
 `.github/workflows/deploy.yml` builds on push to `main` and deploys to GitHub
 Pages with base path `/footprint/`. Anything that depends on the deployed URL must
-respect `import.meta.env.BASE_URL` (the data-fetch URLs already do).
+respect `import.meta.env.BASE_URL` (the data-fetch URLs already do). The PWA
+manifest sidesteps the base path with **relative** internal paths
+(`start_url`/`scope`/icon `src`), and Vite rebases the manifest/`apple-touch-icon`
+hrefs in `index.html` at build time — so the same files work under `/footprint/`
+(Pages) and `/` (desktop/dev). No CI runs on PRs (the workflow only triggers on
+push to `main`).
 
 ## Conventions & gotchas
 
@@ -104,5 +121,22 @@ respect `import.meta.env.BASE_URL` (the data-fetch URLs already do).
   purpose — they hold precise location history and must never be committed.
 - The "states" layer is labeled **"Regions"** in the UI; the internal name remains
   `states` throughout the code and `visited.json`.
+- **Lazy-loaded datasets:** don't revert `layers.ts` to eagerly loading all three
+  GeoJSON — `states.geojson` is ~12 MB gzipped, so eager loading badly slows
+  startup (especially on mobile). Add new heavy layers via the same `ensure*` +
+  `setLayer` pattern.
+- **Turf imports:** import from specific `@turf/*` sub-packages, never the
+  `@turf/turf` umbrella, to keep the installed dependency tree small.
+
+## Possible future work (not started)
+
+- **Shrink the GeoJSON.** The `public/data/*.geojson` files are full-resolution
+  Natural Earth with far more coordinate precision than these zoom levels need. A
+  precision trim (~5 decimals) is near-lossless and would shrink `states.geojson`
+  (~39 MB) substantially; geometric simplification saves more but coarsens polygon
+  boundaries when zoomed in (city markers are points, so they're unaffected). Main
+  payoff: faster Regions/Cities loads.
+- **PR build check.** A workflow running `tsc` + `vite build` on pull requests
+  would catch breakage before merge, since `main` auto-deploys.
 </content>
 </invoke>
