@@ -1,4 +1,6 @@
-import { booleanPointInPolygon, point as turfPoint, distance } from "@turf/turf";
+import { booleanPointInPolygon } from "@turf/boolean-point-in-polygon";
+import { distance } from "@turf/distance";
+import { point as turfPoint } from "@turf/helpers";
 import type { Feature, FeatureCollection, Polygon, MultiPolygon, Point } from "geojson";
 import type { Visit } from "../types";
 import {
