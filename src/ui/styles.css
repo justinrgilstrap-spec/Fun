@@ -350,6 +350,33 @@ body {
   margin: 0;
 }
 
+.layer-toggles input[type="radio"]:disabled {
+  cursor: progress;
+}
+
+/* Spinner shown on a layer label while its dataset is lazily downloading. */
+.layer-toggles label.loading {
+  cursor: progress;
+}
+
+.layer-toggles label.loading::after {
+  content: "";
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: footprint-spin 0.6s linear infinite;
+}
+
+@keyframes footprint-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Focus rings */
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -413,7 +440,8 @@ body {
   #app[data-sidebar="open"] #sidebar {
     transform: translateX(0);
     width: min(85vw, 320px);
-    padding: 24px 22px 28px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) calc(22px + env(safe-area-inset-right, 0px))
+      calc(28px + env(safe-area-inset-bottom, 0px)) calc(22px + env(safe-area-inset-left, 0px));
     opacity: 1;
     pointer-events: auto;
   }
@@ -421,7 +449,8 @@ body {
   #app[data-sidebar="closed"] #sidebar {
     transform: translateX(-100%);
     width: min(85vw, 320px);
-    padding: 24px 22px 28px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) calc(22px + env(safe-area-inset-right, 0px))
+      calc(28px + env(safe-area-inset-bottom, 0px)) calc(22px + env(safe-area-inset-left, 0px));
     opacity: 1;
   }
 

@@ -5,7 +5,7 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
-import { initLayers, applyLayer } from "./map/layers";
+import { initLayers, setLayer } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { countCountries } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
@@ -158,9 +158,30 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
   await renderFromCurrent();
 });
 
-document.querySelectorAll<HTMLInputElement>('input[name="layer"]').forEach((input) => {
-  input.addEventListener("change", () => {
-    if (input.checked) applyLayer(map, input.value as LayerKind);
+const layerInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="layer"]'));
+layerInputs.forEach((input) => {
+  input.addEventListener("change", async () => {
+    if (!input.checked) return;
+    const kind = input.value as LayerKind;
+    const label = input.closest("label");
+    // The dataset isn't on the map yet on first selection (or after a theme
+    // rebuild), so show a spinner and lock the toggles while it loads.
+    const needsLoad = !map.getSource(kind);
+    if (needsLoad) {
+      label?.classList.add("loading");
+      layerInputs.forEach((i) => (i.disabled = true));
+    }
+    try {
+      await setLayer(map, kind);
+    } catch (err) {
+      console.error(`Failed to load ${kind} layer:`, err);
+      alert(`Could not load the ${kind} map data. Check your connection and try again.`);
+    } finally {
+      if (needsLoad) {
+        label?.classList.remove("loading");
+        layerInputs.forEach((i) => (i.disabled = false));
+      }
+    }
   });
 });
 
