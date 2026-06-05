@@ -142,6 +142,12 @@ export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
  * The heavy states/cities GeoJSON is only downloaded when the user opens that view.
  */
 export async function setLayer(map: MlMap, kind: LayerKind): Promise<void> {
+  // A pinned popup describes a feature in the layer that was active when it was
+  // opened; once the view changes it's stale (the same spot now resolves to a
+  // different feature), so dismiss it. A theme toggle deliberately keeps the
+  // popup — it changes how the map is drawn, not what's being inspected.
+  popup?.remove();
+  popup = null;
   await ensureCountries(map);
   if (kind !== "countries") {
     await ENSURE[kind](map);
