@@ -98,6 +98,46 @@ export function countContinents(isoCodes: Iterable<string>): number {
   return set.size;
 }
 
+// Natural Earth's seven land continents, in a stable display order. The headline
+// "Continents / 7" bar uses this same set (open-ocean features are excluded when
+// the lookup is built).
+const CONTINENT_ORDER = [
+  "Europe",
+  "Asia",
+  "Africa",
+  "North America",
+  "South America",
+  "Oceania",
+  "Antarctica",
+];
+
+export interface ContinentCount {
+  continent: string;
+  count: number;
+}
+
+/**
+ * Per-continent count of distinct sovereign countries visited, ordered by
+ * `CONTINENT_ORDER` and omitting continents with none. Territories collapse onto
+ * their parent (matching `countCountries`) so a French-overseas visit doesn't
+ * inflate, say, South America on its own.
+ */
+export function countsByContinent(isoCodes: Iterable<string>): ContinentCount[] {
+  if (!continentByIso) return [];
+  const sovereign = new Set<string>();
+  for (const code of isoCodes) sovereign.add(TERRITORY_PARENT[code] ?? code);
+  const counts = new Map<string, number>();
+  for (const code of sovereign) {
+    const continent = continentByIso.get(code);
+    if (!continent) continue;
+    counts.set(continent, (counts.get(continent) ?? 0) + 1);
+  }
+  return CONTINENT_ORDER.filter((c) => counts.has(c)).map((c) => ({
+    continent: c,
+    count: counts.get(c) as number,
+  }));
+}
+
 export function countryIso(feature: Feature): string {
   const props = feature.properties ?? {};
   const iso = props.ISO_A3 as string | undefined;

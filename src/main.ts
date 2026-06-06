@@ -8,7 +8,7 @@ import { createMap, setMapTheme, type MapTheme } from "./map/map";
 import { initLayers, setLayer, initInteractions, setToggleHandler } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
-import { countCountries, countContinents } from "./geo/datasets";
+import { countCountries, countContinents, countsByContinent } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -128,6 +128,7 @@ function statsFrom(file: VisitedFile) {
     cities: file.cities.length,
     continents: countContinents(file.countries),
     usStates: countUsStates(file.states),
+    continentBreakdown: countsByContinent(file.countries),
   };
 }
 
