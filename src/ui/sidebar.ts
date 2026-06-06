@@ -1,4 +1,4 @@
-import type { ContinentCount } from "../geo/datasets";
+import type { ContinentCount, Extremes } from "../geo/datasets";
 
 interface Stats {
   countries: number;
@@ -10,6 +10,8 @@ interface Stats {
   usStates: number | null;
   /** Per-continent country counts, ordered, omitting empty continents. */
   continentBreakdown: ContinentCount[];
+  /** Compass extremes of visited cities; null until the cities dataset loads. */
+  extremes: Extremes | null;
 }
 
 // Display abbreviations for the two long continent names — keeps chips compact in
@@ -65,6 +67,26 @@ function progressRow(label: string, value: number, total: number): string {
   `;
 }
 
+function extremesSection(ex: Extremes | null): string {
+  if (!ex) return "";
+  const row = (dir: string, place: string) => `
+    <div class="extreme-row">
+      <span class="extreme-dir">${dir}</span>
+      <span class="extreme-place">${escapeHtml(place)}</span>
+    </div>`;
+  return `
+    <div class="extremes-section">
+      <h3 class="stat-subhead">Extremes</h3>
+      <div class="extremes">
+        ${row("N", ex.north.name)}
+        ${row("S", ex.south.name)}
+        ${row("E", ex.east.name)}
+        ${row("W", ex.west.name)}
+      </div>
+    </div>
+  `;
+}
+
 export function renderStats(el: HTMLElement, stats: Stats): void {
   el.hidden = false;
   const usRow = stats.usStates !== null ? progressRow("U.S. states", stats.usStates, US_STATES) : "";
@@ -90,5 +112,6 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
       ${usRow}
     </div>
     ${continentBreakdown(stats.continentBreakdown)}
+    ${extremesSection(stats.extremes)}
   `;
 }

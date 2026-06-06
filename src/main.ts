@@ -8,7 +8,7 @@ import { createMap, setMapTheme, type MapTheme } from "./map/map";
 import { initLayers, setLayer, initInteractions, setToggleHandler } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
-import { countCountries, countContinents, countsByContinent } from "./geo/datasets";
+import { countCountries, countContinents, countsByContinent, cityExtremes, loadCities } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -129,6 +129,7 @@ function statsFrom(file: VisitedFile) {
     continents: countContinents(file.countries),
     usStates: countUsStates(file.states),
     continentBreakdown: countsByContinent(file.countries),
+    extremes: cityExtremes(file.cities),
   };
 }
 
@@ -174,6 +175,23 @@ async function bootstrap() {
   await renderFromCurrent();
   initInteractions(map);
   setToggleHandler(toggleVisited);
+  // Background-prefetch the cities dataset so the city-coordinate stats (extremes,
+  // and later furthest-from-home) can compute. Until it resolves `cityExtremes`
+  // returns null and those rows stay hidden; once loaded we re-render the stats.
+  // This also warms the Cities view. Non-blocking and non-fatal on failure.
+  void prefetchCityStats();
+}
+
+async function prefetchCityStats() {
+  try {
+    await loadCities();
+  } catch (err) {
+    console.error("City-stats prefetch failed:", err);
+    return;
+  }
+  const hasData =
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0;
+  if (hasData) renderStats(statsEl, statsFrom(current));
 }
 
 // Human-readable summary of how many *new* places an import added, e.g.

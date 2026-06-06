@@ -138,6 +138,50 @@ export function countsByContinent(isoCodes: Iterable<string>): ContinentCount[] 
   }));
 }
 
+export interface Extreme {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+export interface Extremes {
+  north: Extreme;
+  south: Extreme;
+  east: Extreme;
+  west: Extreme;
+}
+
+function cityName(f: Feature): string {
+  const props = f.properties ?? {};
+  return (props.NAMEASCII as string) || (props.NAME as string) || "?";
+}
+
+/**
+ * The northernmost / southernmost / easternmost / westernmost visited city, from
+ * the city point coords. Returns null until `loadCities()` has resolved (the
+ * dataset is lazy/prefetched) or when no visited city is present. East/west are a
+ * plain min/max longitude — fine for a personal tracker; no antimeridian wrap.
+ */
+export function cityExtremes(visited: Iterable<string>): Extremes | null {
+  if (!cities) return null;
+  const set = visited instanceof Set ? visited : new Set(visited);
+  let north: Extreme | null = null;
+  let south: Extreme | null = null;
+  let east: Extreme | null = null;
+  let west: Extreme | null = null;
+  for (const f of cities.features) {
+    if (!set.has(cityId(f))) continue;
+    const [lon, lat] = f.geometry.coordinates;
+    const e: Extreme = { name: cityName(f), lat, lon };
+    if (!north || lat > north.lat) north = e;
+    if (!south || lat < south.lat) south = e;
+    if (!east || lon > east.lon) east = e;
+    if (!west || lon < west.lon) west = e;
+  }
+  if (!north || !south || !east || !west) return null;
+  return { north, south, east, west };
+}
+
 export function countryIso(feature: Feature): string {
   const props = feature.properties ?? {};
   const iso = props.ISO_A3 as string | undefined;
