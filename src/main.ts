@@ -7,6 +7,7 @@ import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/v
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
 import { initLayers, setLayer, initInteractions } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
+import { showToast } from "./ui/toast";
 import { countCountries, countContinents } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
@@ -149,10 +150,35 @@ async function bootstrap() {
   initInteractions(map);
 }
 
+// Human-readable summary of how many *new* places an import added, e.g.
+// "Added 4 countries and 11 cities." Returns an "up to date" line when the file
+// only contained places already on the map.
+function importSummary(added: { countries: number; states: number; cities: number }): string {
+  const parts: string[] = [];
+  if (added.countries) parts.push(countLabel(added.countries, "country", "countries"));
+  if (added.states) parts.push(countLabel(added.states, "region", "regions"));
+  if (added.cities) parts.push(countLabel(added.cities, "city", "cities"));
+  if (parts.length === 0) return "Already up to date — no new places found.";
+  return `Added ${joinClauses(parts)}.`;
+}
+
+function countLabel(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+// Joins clauses naturally: "a", "a and b", or "a, b, and c".
+function joinClauses(parts: string[]): string {
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
 setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
-  console.log(`Imported ${fileName}: ${result.visits.length} visits, ${result.points.length} points`);
   if (result.visits.length === 0 && result.points.length === 0) {
-    alert(`Could not find any visits or location points in ${fileName}.\nMake sure this is a Google Timeline export.`);
+    showToast(`No visits found in ${fileName} — is it a Google Timeline export?`, {
+      variant: "error",
+      duration: 7000,
+    });
     return;
   }
   const joined = await joinVisits(result.visits);
@@ -161,6 +187,12 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
     states: joined.visitedStates,
     cities: joined.visitedCities,
   });
+  // Deltas vs. the previous data — computed before `current` is overwritten.
+  const added = {
+    countries: merged.countries.length - current.countries.length,
+    states: merged.states.length - current.states.length,
+    cities: merged.cities.length - current.cities.length,
+  };
   current = await saveVisited(merged);
   await saveRawImport(fileName, {
     source: fileName,
@@ -169,6 +201,7 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
     points: result.points,
   });
   await renderFromCurrent();
+  showToast(importSummary(added), { variant: "success" });
 });
 
 const layerInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="layer"]'));
