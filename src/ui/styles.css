@@ -553,25 +553,29 @@ body {
   background: var(--accent);
 }
 
-/* Desktop write-mode: manually mark/unmark a place from its popup. */
+/* Desktop write-mode: manually mark/unmark a place from its popup. A quiet
+   secondary action — deliberately lower in the visual hierarchy than the place
+   name and the visited status, which it sits beneath. */
 .fp-popup-toggle {
   display: block;
-  width: 100%;
+  width: fit-content;
   margin-top: 10px;
-  padding: 6px 10px;
+  padding: 4px 10px;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent-text);
-  background: var(--accent);
-  border: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
   border-radius: 7px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
 .fp-popup-toggle:hover {
-  background: var(--accent-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .fp-popup-toggle:disabled {

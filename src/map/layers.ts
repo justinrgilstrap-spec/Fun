@@ -113,17 +113,40 @@ async function ensureStates(map: MlMap): Promise<void> {
 async function ensureCities(map: MlMap): Promise<void> {
   if (map.getSource("cities")) return;
   map.addSource("cities", { type: "geojson", data: await taggedCities() });
+  // No `visited` filter: unvisited cities stay in the layer so they're clickable
+  // for marking (desktop write-mode). They're kept invisible (radius 0) until
+  // zoomed in, then fade in as faint, small dots — a circle with radius 0 isn't
+  // hit-tested, so zoomed-out clicks can't accidentally land on a hidden city.
+  // Visited dots are unchanged: visible and clickable at every zoom.
   map.addLayer({
     id: "cities-circle",
     type: "circle",
     source: "cities",
-    filter: ["==", ["get", "visited"], 1],
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 3, 6, 6, 10, 10],
-      "circle-color": VISITED_FILL,
-      "circle-stroke-color": VISITED_OUTLINE,
-      "circle-stroke-width": 1,
-      "circle-opacity": 0.85,
+      // One top-level zoom curve (MapLibre allows only one, and `zoom` can't sit
+      // inside a `case`). Each stop's value is a per-feature `case`: visited dots
+      // keep the original 3→10 curve; unvisited stay at radius 0 until zoom 6,
+      // then grow to a small dot. Radius 0 means invisible AND not hit-tested, so
+      // zoomed out there are no stray click targets.
+      "circle-radius": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        1, ["case", ["==", ["get", "visited"], 1], 3, 0],
+        6, ["case", ["==", ["get", "visited"], 1], 6, 0],
+        7.5, ["case", ["==", ["get", "visited"], 1], 7.5, 3],
+        10, ["case", ["==", ["get", "visited"], 1], 10, 4.5],
+        12, ["case", ["==", ["get", "visited"], 1], 10, 5.5],
+      ],
+      // Unvisited dots use the brighter outline blue as their fill so they read
+      // against the dark basemap (the dimmer NOT_VISITED_FILL is near-invisible here).
+      "circle-color": ["case", ["==", ["get", "visited"], 1], VISITED_FILL, NOT_VISITED_OUTLINE],
+      "circle-stroke-color": ["case", ["==", ["get", "visited"], 1], VISITED_OUTLINE, NOT_VISITED_OUTLINE],
+      "circle-stroke-width": ["case", ["==", ["get", "visited"], 1], 1, 0.5],
+      // Constant per-state opacity — unvisited dots are subdued but findable. No
+      // zoom term needed: the radius curve already keeps them hidden below zoom 6.
+      "circle-opacity": ["case", ["==", ["get", "visited"], 1], 0.85, 0.6],
+      "circle-stroke-opacity": ["case", ["==", ["get", "visited"], 1], 0.85, 0.6],
     },
   }, labelBeforeId(map));
 }
