@@ -119,12 +119,12 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
         <span class="stat-label">Cities</span>
       </div>
     </div>
+    ${continentBreakdown(stats.continentBreakdown)}
     <div class="progress-list">
       ${progressRow("Countries", stats.countries, WORLD_COUNTRIES)}
       ${progressRow("Continents", stats.continents, CONTINENTS)}
       ${usRow}
     </div>
-    ${continentBreakdown(stats.continentBreakdown)}
     ${extremesSection(stats.extremes)}
     ${furthestSection(stats.furthest)}
   `;
