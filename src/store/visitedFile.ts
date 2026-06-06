@@ -6,7 +6,7 @@ const VISITED_URL = `${import.meta.env.BASE_URL}data/visited.json`;
 
 const EMPTY: VisitedFile = { countries: [], states: [], cities: [], updatedAt: 0 };
 
-function isTauri(): boolean {
+export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 

@@ -5,7 +5,7 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
-import { initLayers, setLayer, initInteractions } from "./map/layers";
+import { initLayers, setLayer, initInteractions, setToggleHandler } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
 import { countCountries, countContinents } from "./geo/datasets";
@@ -149,10 +149,30 @@ async function renderFromCurrent() {
   }
 }
 
+// Manually flip a place's visited state from its map popup (desktop write-mode).
+// Replaces hand-editing visited.json to fix spatial-join misses. `LayerKind`
+// values match the VisitedFile keys 1:1, so `kind` indexes the set directly.
+// `saveVisited` is desktop-only and the toggle button is hidden in the browser,
+// so this never runs in read-only mode. Returns the new visited state.
+async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
+  const set = new Set(current[kind]);
+  const nowVisited = !set.has(id);
+  if (nowVisited) set.add(id);
+  else set.delete(id);
+  current = await saveVisited({
+    countries: kind === "countries" ? [...set] : current.countries,
+    states: kind === "states" ? [...set] : current.states,
+    cities: kind === "cities" ? [...set] : current.cities,
+  });
+  await renderFromCurrent();
+  return nowVisited;
+}
+
 async function bootstrap() {
   current = await loadVisited();
   await renderFromCurrent();
   initInteractions(map);
+  setToggleHandler(toggleVisited);
 }
 
 // Human-readable summary of how many *new* places an import added, e.g.

@@ -1,6 +1,7 @@
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from "geojson";
 import { loadCountries, loadStates, loadCities, countryIso, stateIso, cityId } from "../geo/datasets";
+import { isTauri } from "../store/visitedFile";
 import type { LayerKind } from "../types";
 
 interface LayerState {
@@ -206,12 +207,17 @@ function escapeHtml(s: string): string {
   );
 }
 
-function popupHTML(title: string, subtitle: string, visited: boolean): string {
+function popupHTML(title: string, subtitle: string, visited: boolean, canToggle: boolean): string {
   const sub = subtitle ? `<div class="fp-popup-sub">${escapeHtml(subtitle)}</div>` : "";
   const status = visited
     ? `<div class="fp-popup-status is-visited">Visited</div>`
     : `<div class="fp-popup-status">Not visited yet</div>`;
-  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}</div>`;
+  // Desktop write-mode only: a button to manually fix spatial-join misses without
+  // re-importing. Hidden in the read-only browser build (`canToggle` is false).
+  const toggle = canToggle
+    ? `<button type="button" class="fp-popup-toggle">${visited ? "Unmark visited" : "Mark visited"}</button>`
+    : "";
+  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}${toggle}</div>`;
 }
 
 function str(props: Record<string, unknown> | null, key: string): string {
@@ -237,7 +243,7 @@ function featureKey(kind: LayerKind, props: Record<string, unknown> | null): str
 }
 
 // Builds the popup body for a clicked feature, per layer's property scheme.
-function contentFor(kind: LayerKind, props: Record<string, unknown> | null): string {
+function contentFor(kind: LayerKind, props: Record<string, unknown> | null, canToggle: boolean): string {
   const visited = props?.visited === 1;
   if (kind === "countries") {
     const continent = str(props, "CONTINENT");
@@ -245,6 +251,7 @@ function contentFor(kind: LayerKind, props: Record<string, unknown> | null): str
       str(props, "NAME") || str(props, "ADMIN") || "Unknown",
       continent === "Seven seas (open ocean)" ? "" : continent,
       visited,
+      canToggle,
     );
   }
   if (kind === "states") {
@@ -252,12 +259,53 @@ function contentFor(kind: LayerKind, props: Record<string, unknown> | null): str
       str(props, "name") || "Unknown",
       joinParts([str(props, "type_en"), str(props, "admin")]),
       visited,
+      canToggle,
     );
   }
   return popupHTML(
     str(props, "NAME") || str(props, "NAMEASCII") || "Unknown",
     joinParts([str(props, "ADM1NAME"), str(props, "ADM0NAME")]),
     visited,
+    canToggle,
+  );
+}
+
+// The "visited" key for a feature — the same ID scheme used by the visited sets,
+// so a toggle flips the exact entry an import would have added. (featureKey above
+// is for popup-open identity; this is the persisted dataset ID.)
+function visitedId(kind: LayerKind, feature: Feature): string {
+  if (kind === "countries") return countryIso(feature);
+  if (kind === "states") return stateIso(feature);
+  return cityId(feature);
+}
+
+// Registered by main.ts (which owns the persisted `current` file). Flips the ID,
+// saves, re-tags the map + stats, and resolves to the new visited state so the
+// popup can re-render. Null in the browser build (no toggle button is shown).
+type ToggleHandler = (kind: LayerKind, id: string) => Promise<boolean>;
+let toggleHandler: ToggleHandler | null = null;
+export function setToggleHandler(fn: ToggleHandler): void {
+  toggleHandler = fn;
+}
+
+// Bind the popup's Mark/Unmark button. After a toggle, `setHTML` rebuilds the
+// popup DOM with the flipped state, so we re-wire (the `{ once: true }` listener
+// has already spent itself). The handler re-tags the map + stats; here we only
+// refresh the popup so its button + status flip immediately.
+function wirePopupToggle(p: maplibregl.Popup, kind: LayerKind, feature: Feature): void {
+  const btn = p.getElement()?.querySelector<HTMLButtonElement>(".fp-popup-toggle");
+  if (!btn) return;
+  btn.addEventListener(
+    "click",
+    async () => {
+      if (!toggleHandler) return;
+      btn.disabled = true;
+      const nowVisited = await toggleHandler(kind, visitedId(kind, feature));
+      const props = { ...(feature.properties ?? {}), visited: nowVisited ? 1 : 0 };
+      p.setHTML(contentFor(kind, props, true));
+      wirePopupToggle(p, kind, feature);
+    },
+    { once: true },
   );
 }
 
@@ -304,12 +352,14 @@ export function initInteractions(map: MlMap): void {
         feature.geometry.type === "Point"
           ? (feature.geometry.coordinates as [number, number])
           : e.lngLat;
+      const canToggle = isTauri();
       popup?.remove();
       popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "240px" })
         .setLngLat(lngLat)
-        .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null))
+        .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null, canToggle))
         .addTo(map);
       pinnedId = id;
+      if (canToggle) wirePopupToggle(popup, kind, feature as unknown as Feature);
       // Keep pinnedId in sync however the popup closes (✕, re-click, replaced).
       popup.on("close", () => {
         if (pinnedId === id) pinnedId = null;
