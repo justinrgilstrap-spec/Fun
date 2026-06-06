@@ -47,6 +47,21 @@
           <p>Drop your Google Timeline JSON here</p>
           <p class="hint">or <label class="link">click to choose a file<input type="file" id="file-input" accept=".json,application/json" hidden /></label></p>
         </section>
+        <section id="onboarding" class="onboarding">
+          <p class="onboarding-lead">Footprint lights up every country, region, and city you've visited — straight from your Google Maps Timeline. Drop your export above to begin.</p>
+          <details class="onboarding-how">
+            <summary>How do I get my Timeline file?</summary>
+            <div class="onboarding-how-body">
+              <p>Timeline now lives on your phone, so you export it from the Google Maps app:</p>
+              <ol>
+                <li>Open the <strong>Google Maps app</strong> and tap your profile picture → <strong>Your Timeline</strong>.</li>
+                <li>Open <strong>Settings</strong> (⋯) and choose <strong>Export Timeline data</strong>; save the <code>.json</code>.</li>
+                <li>Move that file to this computer, then drop it above.</li>
+              </ol>
+              <p class="onboarding-note">More detail in <a href="https://support.google.com/maps/answer/6258979" target="_blank" rel="noopener noreferrer">Google's Timeline help</a>.</p>
+            </div>
+          </details>
+        </section>
         <section id="stats" class="stats" hidden></section>
         <section id="layer-toggles" class="layer-toggles" hidden>
           <h2>View</h2>
@@ -64,6 +79,7 @@
         </svg>
       </button>
       <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+      <div id="map-hint" class="map-hint" aria-hidden="true">Tap ☰ to import your Timeline</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

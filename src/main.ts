@@ -132,13 +132,18 @@ function statsFrom(file: VisitedFile) {
 }
 
 async function renderFromCurrent() {
+  // Toggle the empty-state onboarding up front (before the map finishes loading)
+  // so first-run guidance shows immediately; hidden as soon as any data exists.
+  const hasData =
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0;
+  appEl.setAttribute("data-empty", hasData ? "false" : "true");
   if (!mapReady) await onMapReady;
   await initLayers(map, {
     visitedCountries: new Set(current.countries),
     visitedStates: new Set(current.states),
     visitedCities: new Set(current.cities),
   });
-  if (current.countries.length || current.states.length || current.cities.length) {
+  if (hasData) {
     renderStats(statsEl, statsFrom(current));
     togglesEl.hidden = false;
   }
