@@ -1,43 +1,24 @@
-import maplibregl, { Map as MlMap, type StyleSpecification } from "maplibre-gl";
+import maplibregl, { Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 export type MapTheme = "light" | "dark";
 
-const POSITRON_TILES = [
-  "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-  "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-  "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-  "https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-];
-
-const DARK_MATTER_TILES = [
-  "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-  "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-  "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-  "https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-];
-
-function styleFor(theme: MapTheme): StyleSpecification {
-  const tiles = theme === "dark" ? DARK_MATTER_TILES : POSITRON_TILES;
-  return {
-    version: 8,
-    sources: {
-      basemap: {
-        type: "raster",
-        tiles,
-        tileSize: 256,
-        attribution: "© OpenStreetMap contributors © CARTO",
-      },
-    },
-    layers: [{ id: "basemap", type: "raster", source: "basemap" }],
-    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-  };
+// Vendored CARTO vector basemaps (Positron for light, Dark Matter for dark),
+// served from public/basemap/. They're the upstream CARTO GL styles with the
+// `place_continent` layer stripped — that's the only label we don't want. Country
+// /state/city labels in these styles already use {name_en}, so text renders in
+// English (the multilingual sprawl only existed in the raster `*_all` tiles).
+// Tiles, glyphs, and sprites load from tiles.basemaps.cartocdn.com, which the
+// existing CSP wildcard already covers, so bundling the style needs no CSP change.
+function styleUrl(theme: MapTheme): string {
+  const file = theme === "dark" ? "dark-matter" : "positron";
+  return `${import.meta.env.BASE_URL}basemap/${file}.json`;
 }
 
 export function createMap(container: HTMLElement, theme: MapTheme): MlMap {
   const map = new maplibregl.Map({
     container,
-    style: styleFor(theme),
+    style: styleUrl(theme),
     center: [0, 25],
     zoom: 1.4,
     minZoom: 1,
@@ -61,6 +42,6 @@ export function setMapTheme(map: MlMap, theme: MapTheme): Promise<void> {
       resolve();
     };
     map.on("style.load", onStyleLoad);
-    map.setStyle(styleFor(theme));
+    map.setStyle(styleUrl(theme));
   });
 }

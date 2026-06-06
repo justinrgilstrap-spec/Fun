@@ -57,37 +57,47 @@ async function taggedCities(): Promise<FeatureCollection<Point>> {
 // Add a dataset's source + layers if they aren't on the map yet; no-op when they
 // already exist, so switching back to a loaded layer is instant. The first call
 // for states/cities is what triggers their (lazy) download.
+// The vector basemap stacks all its text in symbol layers on top. Insert our
+// choropleth fills/dots just beneath the first of them so place labels stay
+// legible above the visited shading. Returns undefined if the style has no symbol
+// layer (then addLayer appends on top, which is still fine).
+function labelBeforeId(map: MlMap): string | undefined {
+  return map.getStyle().layers?.find((l: maplibregl.LayerSpecification) => l.type === "symbol")?.id;
+}
+
 async function ensureCountries(map: MlMap): Promise<void> {
   if (map.getSource("countries")) return;
   map.addSource("countries", { type: "geojson", data: await taggedCountries() });
+  const before = labelBeforeId(map);
   map.addLayer({
     id: "countries-fill",
     type: "fill",
     source: "countries",
     paint: { "fill-color": visitedFillExpr, "fill-opacity": visitedOpacityExpr },
-  });
+  }, before);
   map.addLayer({
     id: "countries-line",
     type: "line",
     source: "countries",
     paint: { "line-color": visitedOutlineExpr, "line-width": 0.6, "line-opacity": 0.8 },
-  });
+  }, before);
 }
 async function ensureStates(map: MlMap): Promise<void> {
   if (map.getSource("states")) return;
   map.addSource("states", { type: "geojson", data: await taggedStates() });
+  const before = labelBeforeId(map);
   map.addLayer({
     id: "states-fill",
     type: "fill",
     source: "states",
     paint: { "fill-color": visitedFillExpr, "fill-opacity": visitedOpacityExpr },
-  });
+  }, before);
   map.addLayer({
     id: "states-line",
     type: "line",
     source: "states",
     paint: { "line-color": visitedOutlineExpr, "line-width": 0.4, "line-opacity": 0.6 },
-  });
+  }, before);
 }
 async function ensureCities(map: MlMap): Promise<void> {
   if (map.getSource("cities")) return;
@@ -104,7 +114,7 @@ async function ensureCities(map: MlMap): Promise<void> {
       "circle-stroke-width": 1,
       "circle-opacity": 0.85,
     },
-  });
+  }, labelBeforeId(map));
 }
 
 const ENSURE: Record<LayerKind, (map: MlMap) => Promise<void>> = {

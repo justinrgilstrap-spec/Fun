@@ -10,8 +10,16 @@ as a **native macOS desktop app** (built with Tauri, read/write).
 - **Frontend:** TypeScript (strict) + Vite 6, no UI framework — plain DOM, ES
   modules. Entry point is `src/main.ts`, wired up against the static markup in
   `index.html`.
-- **Map:** [MapLibre GL](https://maplibre.org/) with CARTO raster basemaps
-  (Positron for light, Dark Matter for dark).
+- **Map:** [MapLibre GL](https://maplibre.org/) with CARTO **vector** basemaps
+  (Positron for light, Dark Matter for dark). The GL styles are **vendored** to
+  `public/basemap/{positron,dark-matter}.json` — copied from CARTO with the
+  `place_continent` label layer stripped (the only label we don't want; country/
+  state/city labels there already use `{name_en}`, so text is English). Tiles,
+  glyphs, and sprites load from `tiles.basemaps.cartocdn.com`, covered by the
+  existing CSP `*.basemaps.cartocdn.com` wildcard — so vendoring needs **no CSP
+  change**. `src/map/map.ts` points the style at the local JSON; the visited
+  fills/dots are inserted *beneath the first symbol (label) layer* via `beforeId`
+  in `layers.ts` so place labels stay legible above the shading.
 - **Geo:** [Turf.js](https://turfjs.org/) for point-in-polygon and nearest-city
   math — imported as the specific sub-packages used (`@turf/boolean-point-in-polygon`,
   `@turf/distance`, `@turf/helpers`), not the `@turf/turf` umbrella. Reference
