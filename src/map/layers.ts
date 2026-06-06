@@ -26,15 +26,25 @@ const NOT_VISITED_OUTLINE = "#3D7BA8";
 
 const visitedFillExpr = ["case", ["==", ["get", "visited"], 1], VISITED_FILL, NOT_VISITED_FILL] as unknown as maplibregl.PropertyValueSpecification<string>;
 const visitedOutlineExpr = ["case", ["==", ["get", "visited"], 1], VISITED_OUTLINE, NOT_VISITED_OUTLINE] as unknown as maplibregl.PropertyValueSpecification<string>;
-const visitedOpacityExpr = ["case", ["==", ["get", "visited"], 1], 0.55, 0.0] as unknown as maplibregl.PropertyValueSpecification<number>;
+// Fill opacity, lifted a touch on hover. Hovering a visited place brightens it;
+// hovering an unvisited one fades in a faint wash so the whole map feels live.
+// The resting (non-hover) values are unchanged from before.
+const visitedOpacityExpr = [
+  "case",
+  ["boolean", ["feature-state", "hover"], false],
+  ["case", ["==", ["get", "visited"], 1], 0.72, 0.18],
+  ["case", ["==", ["get", "visited"], 1], 0.55, 0.0],
+] as unknown as maplibregl.PropertyValueSpecification<number>;
 
 function tagVisited<T extends Feature<Polygon | MultiPolygon> | Feature<Point>>(
   features: T[],
   visited: Set<string>,
   getId: (f: Feature) => string,
 ): T[] {
-  return features.map((f) => ({
+  // The index doubles as the feature id so hover feature-state can target it.
+  return features.map((f, i) => ({
     ...f,
+    id: i,
     properties: { ...(f.properties ?? {}), visited: visited.has(getId(f)) ? 1 : 0 },
   }));
 }
@@ -311,6 +321,33 @@ export function initInteractions(map: MlMap): void {
     map.on("mouseleave", layerId, () => {
       map.getCanvas().style.cursor = "";
     });
+  }
+
+  // Subtle hover highlight via feature-state. The polygon fills read
+  // ["feature-state","hover"] in their opacity expression, so we just flag the
+  // feature under the cursor. Cities are small dots, so only countries/regions
+  // get the effect. Only the active layer is visible, so at most one fires.
+  const HOVER_LAYERS: Array<[string, string]> = [
+    ["countries-fill", "countries"],
+    ["states-fill", "states"],
+  ];
+  let hovered: { source: string; id: string | number } | null = null;
+  const clearHover = () => {
+    if (hovered) {
+      map.setFeatureState(hovered, { hover: false });
+      hovered = null;
+    }
+  };
+  for (const [layerId, source] of HOVER_LAYERS) {
+    map.on("mousemove", layerId, (e) => {
+      const f = e.features?.[0];
+      if (f == null || f.id == null) return;
+      if (hovered && hovered.source === source && hovered.id === f.id) return;
+      clearHover();
+      hovered = { source, id: f.id };
+      map.setFeatureState(hovered, { hover: true });
+    });
+    map.on("mouseleave", layerId, clearHover);
   }
 
   // Replaces MapLibre's closeOnClick: clicking empty map dismisses the popup,
