@@ -1,4 +1,4 @@
-import type { ContinentCount, Extremes } from "../geo/datasets";
+import type { ContinentCount, Extremes, Furthest } from "../geo/datasets";
 
 interface Stats {
   countries: number;
@@ -12,6 +12,8 @@ interface Stats {
   continentBreakdown: ContinentCount[];
   /** Compass extremes of visited cities; null until the cities dataset loads. */
   extremes: Extremes | null;
+  /** Furthest visited city from home; null without a home or before cities load. */
+  furthest: Furthest | null;
 }
 
 // Display abbreviations for the two long continent names — keeps chips compact in
@@ -87,6 +89,17 @@ function extremesSection(ex: Extremes | null): string {
   `;
 }
 
+function furthestSection(f: Furthest | null): string {
+  if (!f) return "";
+  const km = Math.round(f.km).toLocaleString();
+  return `
+    <div class="furthest">
+      <span class="furthest-label">Furthest from home</span>
+      <span class="furthest-value">${escapeHtml(f.name)} · ${km} km</span>
+    </div>
+  `;
+}
+
 export function renderStats(el: HTMLElement, stats: Stats): void {
   el.hidden = false;
   const usRow = stats.usStates !== null ? progressRow("U.S. states", stats.usStates, US_STATES) : "";
@@ -113,5 +126,6 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
     </div>
     ${continentBreakdown(stats.continentBreakdown)}
     ${extremesSection(stats.extremes)}
+    ${furthestSection(stats.furthest)}
   `;
 }

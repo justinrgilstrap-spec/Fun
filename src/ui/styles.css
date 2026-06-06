@@ -576,6 +576,31 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Furthest-from-home stat */
+.furthest {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+}
+
+.furthest-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.furthest-value {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
 /* Map click popups */
 .maplibregl-popup-content {
   background: var(--panel) !important;
@@ -652,13 +677,17 @@ body {
   background: var(--accent);
 }
 
-/* Desktop write-mode: manually mark/unmark a place from its popup. A quiet
-   secondary action — deliberately lower in the visual hierarchy than the place
-   name and the visited status, which it sits beneath. */
-.fp-popup-toggle {
-  display: block;
-  width: fit-content;
+/* Desktop write-mode: quiet ghost actions (mark/unmark, set home) beneath the
+   place name + status — deliberately low in the visual hierarchy. */
+.fp-popup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-top: 10px;
+}
+
+.fp-popup-toggle,
+.fp-popup-home {
   padding: 4px 10px;
   font: inherit;
   font-size: 11px;
@@ -671,14 +700,31 @@ body {
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
-.fp-popup-toggle:hover {
+.fp-popup-toggle:hover,
+.fp-popup-home:hover {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.fp-popup-toggle:disabled {
+.fp-popup-toggle:disabled,
+.fp-popup-home:disabled {
   opacity: 0.6;
+  cursor: default;
+}
+
+/* Home pin marker — a small house badge in the accent color */
+.fp-home-marker {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
   cursor: default;
 }
 

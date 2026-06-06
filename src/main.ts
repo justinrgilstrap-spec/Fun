@@ -1,14 +1,15 @@
 import "@fontsource-variable/inter";
 import "@fontsource-variable/fraunces";
 import "./ui/styles.css";
+import maplibregl from "maplibre-gl";
 import { setupDropzone } from "./import/dropzone";
-import { joinVisits } from "./geo/spatialJoin";
+import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
-import { initLayers, setLayer, initInteractions, setToggleHandler } from "./map/layers";
+import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
-import { countCountries, countContinents, countsByContinent, cityExtremes, loadCities } from "./geo/datasets";
+import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -130,6 +131,7 @@ function statsFrom(file: VisitedFile) {
     usStates: countUsStates(file.states),
     continentBreakdown: countsByContinent(file.countries),
     extremes: cityExtremes(file.cities),
+    furthest: furthestCity(file.home, file.cities),
   };
 }
 
@@ -149,6 +151,50 @@ async function renderFromCurrent() {
     renderStats(statsEl, statsFrom(current));
     togglesEl.hidden = false;
   }
+  updateHomeMarker();
+}
+
+// A house marker at the home pin. Markers live in the map's DOM container, not the
+// GL style, so they survive the style rebuild a theme toggle triggers — this just
+// keeps position/label in sync (and removes the marker if home is cleared).
+let homeMarker: maplibregl.Marker | null = null;
+function updateHomeMarker() {
+  if (!current.home) {
+    homeMarker?.remove();
+    homeMarker = null;
+    return;
+  }
+  const { lon, lat, label } = current.home;
+  if (!homeMarker) {
+    const el = document.createElement("div");
+    el.className = "fp-home-marker";
+    el.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <path fill="currentColor" d="M12 3 3 10.2V21h6v-6h6v6h6V10.2L12 3z"/>
+    </svg>`;
+    homeMarker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+  } else {
+    homeMarker.setLngLat([lon, lat]);
+  }
+  homeMarker.getElement().title = `Home: ${label}`;
+}
+
+// Snap a clicked point to the nearest dataset city and persist it as home. The
+// snap is the privacy coarsening — what's stored is a public city centroid, not
+// the raw click. Desktop write-mode only (the popup button is hidden in browser).
+async function setHome(lng: number, lat: number): Promise<void> {
+  const home = await nearestCity(lat, lng);
+  if (!home) {
+    showToast("Couldn't find a nearby city to set as home.", { variant: "error" });
+    return;
+  }
+  current = await saveVisited({
+    countries: current.countries,
+    states: current.states,
+    cities: current.cities,
+    home,
+  });
+  await renderFromCurrent();
+  showToast(`Home set to ${home.label}.`, { variant: "success" });
 }
 
 // Manually flip a place's visited state from its map popup (desktop write-mode).
@@ -165,6 +211,7 @@ async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
     countries: kind === "countries" ? [...set] : current.countries,
     states: kind === "states" ? [...set] : current.states,
     cities: kind === "cities" ? [...set] : current.cities,
+    home: current.home,
   });
   await renderFromCurrent();
   return nowVisited;
@@ -175,6 +222,7 @@ async function bootstrap() {
   await renderFromCurrent();
   initInteractions(map);
   setToggleHandler(toggleVisited);
+  setHomeHandler(setHome);
   // Background-prefetch the cities dataset so the city-coordinate stats (extremes,
   // and later furthest-from-home) can compute. Until it resolves `cityExtremes`
   // returns null and those rows stay hidden; once loaded we re-render the stats.

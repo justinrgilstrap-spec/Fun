@@ -10,7 +10,9 @@ import {
   countryIso,
   stateIso,
   cityId,
+  cityName,
 } from "./datasets";
+import type { HomePoint } from "../types";
 
 interface BBox {
   minLon: number;
@@ -74,6 +76,30 @@ function findNearestCity(cities: FeatureCollection<Point>, lat: number, lon: num
     }
   }
   return bestD <= maxKm ? best : null;
+}
+
+/**
+ * Snap an arbitrary point to the nearest dataset city, returning that city's
+ * centroid + name as a HomePoint. Uncapped (unlike the 25 km import match) so a
+ * home click always resolves to *some* city — the snap is what coarsens the
+ * stored coordinate to a public, city-level location. Full scan over ~7,300
+ * cities, which is instant for a one-off click.
+ */
+export async function nearestCity(lat: number, lon: number): Promise<HomePoint | null> {
+  const cities = await loadCities();
+  const pt = turfPoint([lon, lat]);
+  let best: Feature<Point> | null = null;
+  let bestD = Infinity;
+  for (const city of cities.features) {
+    const d = distance(pt, city, { units: "kilometers" });
+    if (d < bestD) {
+      bestD = d;
+      best = city;
+    }
+  }
+  if (!best) return null;
+  const [clon, clat] = (best.geometry as Point).coordinates;
+  return { lat: clat, lon: clon, label: cityName(best) };
 }
 
 export interface JoinedResult {

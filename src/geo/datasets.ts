@@ -1,4 +1,7 @@
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from "geojson";
+import { distance } from "@turf/distance";
+import { point as turfPoint } from "@turf/helpers";
+import type { HomePoint } from "../types";
 
 const COUNTRIES_URL = `${import.meta.env.BASE_URL}data/countries.geojson`;
 const STATES_URL = `${import.meta.env.BASE_URL}data/states.geojson`;
@@ -151,7 +154,7 @@ export interface Extremes {
   west: Extreme;
 }
 
-function cityName(f: Feature): string {
+export function cityName(f: Feature): string {
   const props = f.properties ?? {};
   return (props.NAMEASCII as string) || (props.NAME as string) || "?";
 }
@@ -180,6 +183,29 @@ export function cityExtremes(visited: Iterable<string>): Extremes | null {
   }
   if (!north || !south || !east || !west) return null;
   return { north, south, east, west };
+}
+
+export interface Furthest {
+  name: string;
+  km: number;
+}
+
+/**
+ * The visited city furthest (great-circle) from home. Returns null without a home
+ * pin, before `loadCities()` resolves, or with no visited cities. Reuses the city
+ * point coords + `@turf/distance` (already a dependency).
+ */
+export function furthestCity(home: HomePoint | undefined, visited: Iterable<string>): Furthest | null {
+  if (!home || !cities) return null;
+  const set = visited instanceof Set ? visited : new Set(visited);
+  const from = turfPoint([home.lon, home.lat]);
+  let best: Furthest | null = null;
+  for (const f of cities.features) {
+    if (!set.has(cityId(f))) continue;
+    const km = distance(from, f, { units: "kilometers" });
+    if (!best || km > best.km) best = { name: cityName(f), km };
+  }
+  return best;
 }
 
 export function countryIso(feature: Feature): string {
