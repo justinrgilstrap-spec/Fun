@@ -15,6 +15,20 @@
   "states": [
     "CA-ON",
     "CA-QC",
+    "CH-BS",
+    "DE-BW",
+    "DE-HE",
+    "DE-NW",
+    "DE-RP",
+    "ES-B",
+    "ES-GU",
+    "ES-L",
+    "ES-M",
+    "ES-SO",
+    "ES-T",
+    "ES-Z",
+    "FR-67",
+    "FR-68",
     "GB-BKM",
     "GB-EAL",
     "GB-GRE",
@@ -31,20 +45,6 @@
     "GB-WND",
     "GB-WNM",
     "GB-WSM",
-    "CH-BS",
-    "DE-BW",
-    "DE-HE",
-    "DE-NW",
-    "DE-RP",
-    "ES-B",
-    "ES-GU",
-    "ES-L",
-    "ES-M",
-    "ES-SO",
-    "ES-T",
-    "ES-Z",
-    "FR-67",
-    "FR-68",
     "NL-LI",
     "NL-NB",
     "NL-NH",
@@ -84,9 +84,9 @@
     "US-TX",
     "US-VA",
     "US-VT",
-    "VI-X01~",
     "US-WA",
-    "US-WV"
+    "US-WV",
+    "VI-X01~"
   ],
   "cities": [
     "CAN|Ontario|Toronto",
@@ -143,6 +143,7 @@
     "USA|Nevada|Las Vegas",
     "USA|New Jersey|Newark",
     "USA|New Mexico|Albuquerque",
+    "USA|New York|New York",
     "USA|North Carolina|Asheville",
     "USA|North Carolina|Charlotte",
     "USA|North Carolina|Durham",
@@ -185,5 +186,5 @@
     "USA|West Virginia|Charleston",
     "VIR||Christiansted"
   ],
-  "updatedAt": 1778981700000
+  "updatedAt": 1780770061279
 }
