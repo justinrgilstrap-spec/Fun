@@ -46,7 +46,7 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
       </div>
     </div>
     <div class="progress-list">
-      ${progressRow("World", stats.countries, WORLD_COUNTRIES)}
+      ${progressRow("Countries", stats.countries, WORLD_COUNTRIES)}
       ${progressRow("Continents", stats.continents, CONTINENTS)}
       ${usRow}
     </div>
