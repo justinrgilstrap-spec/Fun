@@ -186,5 +186,10 @@
     "USA|West Virginia|Charleston",
     "VIR||Christiansted"
   ],
+  "home": {
+    "lat": 33.739457,
+    "lon": -84.367642,
+    "label": "Atlanta"
+  },
   "updatedAt": 1780770061279
 }
