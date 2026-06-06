@@ -168,10 +168,3 @@ renders.
   data only starts ~Sept 2025, so lifetime "first visited" semantics would be
   misleading. Revisit only if older history is backfilled; an honest version would
   be a clearly-labeled "recent activity (since tracking began)" scope.
-- **Popup toggle.** Clicking a feature whose popup is already open should dismiss
-  it (click-to-open, click-again-to-close) instead of silently re-pinning. Track
-  the currently-pinned feature id in `initInteractions` (`src/map/layers.ts`); if
-  the next click hits that same feature, `popup.remove()` rather than opening a new
-  one. `closeOnClick` already covers clicking empty map / the ✕, so this only adds
-  the re-click-to-close case — mind that the map-level close and layer-level open
-  both fire on a single click.

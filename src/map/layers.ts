@@ -213,6 +213,19 @@ function joinParts(parts: string[]): string {
   return parts.filter(Boolean).join(", ");
 }
 
+// A stable identity for a clicked feature, so a second click on the same
+// feature can toggle its popup shut. Keyed on the same properties the popup
+// renders, prefixed by layer kind so ids never collide across layers.
+function featureKey(kind: LayerKind, props: Record<string, unknown> | null): string {
+  if (kind === "countries") {
+    return `countries:${str(props, "NAME") || str(props, "ADMIN")}`;
+  }
+  if (kind === "states") {
+    return `states:${joinParts([str(props, "name"), str(props, "admin")])}`;
+  }
+  return `cities:${joinParts([str(props, "NAMEASCII") || str(props, "NAME"), str(props, "ADM1NAME"), str(props, "ADM0NAME")])}`;
+}
+
 // Builds the popup body for a clicked feature, per layer's property scheme.
 function contentFor(kind: LayerKind, props: Record<string, unknown> | null): string {
   const visited = props?.visited === 1;
@@ -239,6 +252,10 @@ function contentFor(kind: LayerKind, props: Record<string, unknown> | null): str
 }
 
 let popup: maplibregl.Popup | null = null;
+// Identity of the feature whose popup is currently pinned, so re-clicking it
+// closes rather than re-pins. Cleared whenever the popup closes (✕, empty-map
+// click, theme rebuild).
+let pinnedId: string | null = null;
 let interactionsReady = false;
 
 // Wire click + hover-cursor handlers once. Registering by layer id works even
@@ -254,10 +271,23 @@ export function initInteractions(map: MlMap): void {
   if (interactionsReady) return;
   interactionsReady = true;
 
+  // The most recent click an open-popup handled, so the map-level close handler
+  // below can tell "clicked off onto empty map" (close) from "a feature handler
+  // already dealt with this click" (leave it alone). Both fire on one click and
+  // share the same event object, so identity comparison is reliable.
+  let handledClick: unknown = null;
+
   for (const [layerId, kind] of CLICK_LAYERS) {
     map.on("click", layerId, (e) => {
       const feature = e.features?.[0];
       if (!feature) return;
+      handledClick = e;
+      const id = featureKey(kind, feature.properties as Record<string, unknown> | null);
+      // Re-click on the already-pinned feature: dismiss it, don't re-pin.
+      if (id === pinnedId) {
+        popup?.remove();
+        return;
+      }
       // Point features sit on a precise spot; anchor the popup there. Polygons
       // are anchored at the click location.
       const lngLat =
@@ -265,10 +295,15 @@ export function initInteractions(map: MlMap): void {
           ? (feature.geometry.coordinates as [number, number])
           : e.lngLat;
       popup?.remove();
-      popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: "240px" })
+      popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "240px" })
         .setLngLat(lngLat)
         .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null))
         .addTo(map);
+      pinnedId = id;
+      // Keep pinnedId in sync however the popup closes (✕, re-click, replaced).
+      popup.on("close", () => {
+        if (pinnedId === id) pinnedId = null;
+      });
     });
     map.on("mouseenter", layerId, () => {
       map.getCanvas().style.cursor = "pointer";
@@ -277,4 +312,12 @@ export function initInteractions(map: MlMap): void {
       map.getCanvas().style.cursor = "";
     });
   }
+
+  // Replaces MapLibre's closeOnClick: clicking empty map dismisses the popup,
+  // but a click already handled by a feature layer above is left alone. This
+  // handler is registered after the layer handlers, so it sees their result.
+  map.on("click", (e) => {
+    if (e === handledClick) return;
+    popup?.remove();
+  });
 }
