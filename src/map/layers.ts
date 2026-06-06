@@ -235,12 +235,16 @@ function popupHTML(title: string, subtitle: string, visited: boolean, canToggle:
   const status = visited
     ? `<div class="fp-popup-status is-visited">Visited</div>`
     : `<div class="fp-popup-status">Not visited yet</div>`;
-  // Desktop write-mode only: a button to manually fix spatial-join misses without
-  // re-importing. Hidden in the read-only browser build (`canToggle` is false).
-  const toggle = canToggle
-    ? `<button type="button" class="fp-popup-toggle">${visited ? "Unmark visited" : "Mark visited"}</button>`
+  // Desktop write-mode only: quiet ghost buttons to fix spatial-join misses and
+  // set the home pin without re-importing/hand-editing. Hidden in the read-only
+  // browser build (`canToggle` is false).
+  const actions = canToggle
+    ? `<div class="fp-popup-actions">` +
+      `<button type="button" class="fp-popup-toggle">${visited ? "Unmark visited" : "Mark visited"}</button>` +
+      `<button type="button" class="fp-popup-home">Set as home</button>` +
+      `</div>`
     : "";
-  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}${toggle}</div>`;
+  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}${actions}</div>`;
 }
 
 function str(props: Record<string, unknown> | null, key: string): string {
@@ -311,25 +315,56 @@ export function setToggleHandler(fn: ToggleHandler): void {
   toggleHandler = fn;
 }
 
-// Bind the popup's Mark/Unmark button. After a toggle, `setHTML` rebuilds the
-// popup DOM with the flipped state, so we re-wire (the `{ once: true }` listener
-// has already spent itself). The handler re-tags the map + stats; here we only
-// refresh the popup so its button + status flip immediately.
-function wirePopupToggle(p: maplibregl.Popup, kind: LayerKind, feature: Feature): void {
-  const btn = p.getElement()?.querySelector<HTMLButtonElement>(".fp-popup-toggle");
-  if (!btn) return;
-  btn.addEventListener(
-    "click",
-    async () => {
-      if (!toggleHandler) return;
-      btn.disabled = true;
-      const nowVisited = await toggleHandler(kind, visitedId(kind, feature));
-      const props = { ...(feature.properties ?? {}), visited: nowVisited ? 1 : 0 };
-      p.setHTML(contentFor(kind, props, true));
-      wirePopupToggle(p, kind, feature);
-    },
-    { once: true },
-  );
+// Registered by main.ts. Snaps the given point to the nearest city and persists
+// it as the home pin, then re-renders the map (home marker) + stats. Null in the
+// browser build (no "Set as home" button is shown).
+type HomeHandler = (lng: number, lat: number) => Promise<void>;
+let homeHandler: HomeHandler | null = null;
+export function setHomeHandler(fn: HomeHandler): void {
+  homeHandler = fn;
+}
+
+// Bind the popup's write-mode buttons (Mark/Unmark + Set as home). After a toggle
+// `setHTML` rebuilds the popup DOM, spending the `{ once: true }` listeners, so we
+// re-wire. `ll` is the [lng, lat] the popup is anchored at — what "Set as home"
+// snaps from.
+function wirePopupActions(
+  p: maplibregl.Popup,
+  kind: LayerKind,
+  feature: Feature,
+  ll: [number, number],
+): void {
+  const root = p.getElement();
+  if (!root) return;
+
+  const toggleBtn = root.querySelector<HTMLButtonElement>(".fp-popup-toggle");
+  if (toggleBtn && toggleHandler) {
+    toggleBtn.addEventListener(
+      "click",
+      async () => {
+        toggleBtn.disabled = true;
+        const nowVisited = await toggleHandler!(kind, visitedId(kind, feature));
+        const props = { ...(feature.properties ?? {}), visited: nowVisited ? 1 : 0 };
+        p.setHTML(contentFor(kind, props, true));
+        wirePopupActions(p, kind, feature, ll);
+      },
+      { once: true },
+    );
+  }
+
+  const homeBtn = root.querySelector<HTMLButtonElement>(".fp-popup-home");
+  if (homeBtn && homeHandler) {
+    homeBtn.addEventListener(
+      "click",
+      async () => {
+        homeBtn.disabled = true;
+        homeBtn.textContent = "Setting…";
+        await homeHandler!(ll[0], ll[1]);
+        homeBtn.textContent = "Home set ✓";
+      },
+      { once: true },
+    );
+  }
 }
 
 let popup: maplibregl.Popup | null = null;
@@ -370,19 +405,20 @@ export function initInteractions(map: MlMap): void {
         return;
       }
       // Point features sit on a precise spot; anchor the popup there. Polygons
-      // are anchored at the click location.
-      const lngLat =
+      // are anchored at the click location. Kept as a [lng, lat] tuple so it can
+      // double as the snap origin for "Set as home".
+      const ll: [number, number] =
         feature.geometry.type === "Point"
           ? (feature.geometry.coordinates as [number, number])
-          : e.lngLat;
+          : [e.lngLat.lng, e.lngLat.lat];
       const canToggle = isTauri();
       popup?.remove();
       popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "240px" })
-        .setLngLat(lngLat)
+        .setLngLat(ll)
         .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null, canToggle))
         .addTo(map);
       pinnedId = id;
-      if (canToggle) wirePopupToggle(popup, kind, feature as unknown as Feature);
+      if (canToggle) wirePopupActions(popup, kind, feature as unknown as Feature, ll);
       // Keep pinnedId in sync however the popup closes (✕, re-click, replaced).
       popup.on("close", () => {
         if (pinnedId === id) pinnedId = null;

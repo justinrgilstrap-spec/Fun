@@ -1,3 +1,5 @@
+import type { ContinentCount, Extremes, Furthest } from "../geo/datasets";
+
 interface Stats {
   countries: number;
   states: number;
@@ -6,6 +8,47 @@ interface Stats {
   continents: number;
   /** US states visited, or null when none — hides the US row for non-US users. */
   usStates: number | null;
+  /** Per-continent country counts, ordered, omitting empty continents. */
+  continentBreakdown: ContinentCount[];
+  /** Compass extremes of visited cities; null until the cities dataset loads. */
+  extremes: Extremes | null;
+  /** Furthest visited city from home; null without a home or before cities load. */
+  furthest: Furthest | null;
+}
+
+// Display abbreviations for the two long continent names — keeps chips compact in
+// the 320px sidebar without abbreviating the short names.
+const CONTINENT_ABBR: Record<string, string> = {
+  "North America": "N. America",
+  "South America": "S. America",
+};
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+}
+
+function continentBreakdown(items: ContinentCount[]): string {
+  if (items.length === 0) return "";
+  const chips = items
+    .map(
+      ({ continent, count }) => `
+      <span class="continent-chip">
+        <span class="continent-name">${escapeHtml(CONTINENT_ABBR[continent] ?? continent)}</span>
+        <span class="continent-count">${count}</span>
+      </span>`,
+    )
+    .join("");
+  // The "all 7" badge lands the milestone the per-continent chips build toward.
+  const badge =
+    items.length === CONTINENTS ? `<span class="badge">🌍 All 7 continents</span>` : "";
+  return `
+    <div class="continent-section">
+      <div class="continent-list">${chips}</div>
+      ${badge}
+    </div>
+  `;
 }
 
 // Denominators for the completion bars.
@@ -22,6 +65,37 @@ function progressRow(label: string, value: number, total: number): string {
         <span class="progress-frac">${value}<span class="progress-total"> / ${total}</span></span>
       </div>
       <div class="progress-track"><div class="progress-fill" style="width: ${pct}%"></div></div>
+    </div>
+  `;
+}
+
+function extremesSection(ex: Extremes | null): string {
+  if (!ex) return "";
+  const row = (dir: string, place: string) => `
+    <div class="extreme-row">
+      <span class="extreme-dir">${dir}</span>
+      <span class="extreme-place">${escapeHtml(place)}</span>
+    </div>`;
+  return `
+    <div class="extremes-section">
+      <h3 class="stat-subhead">Extremes</h3>
+      <div class="extremes">
+        ${row("N", ex.north.name)}
+        ${row("S", ex.south.name)}
+        ${row("E", ex.east.name)}
+        ${row("W", ex.west.name)}
+      </div>
+    </div>
+  `;
+}
+
+function furthestSection(f: Furthest | null): string {
+  if (!f) return "";
+  const km = Math.round(f.km).toLocaleString();
+  return `
+    <div class="furthest">
+      <span class="furthest-label">Furthest from home</span>
+      <span class="furthest-value">${escapeHtml(f.name)} · ${km} km</span>
     </div>
   `;
 }
@@ -45,10 +119,13 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
         <span class="stat-label">Cities</span>
       </div>
     </div>
+    ${continentBreakdown(stats.continentBreakdown)}
     <div class="progress-list">
       ${progressRow("Countries", stats.countries, WORLD_COUNTRIES)}
       ${progressRow("Continents", stats.continents, CONTINENTS)}
       ${usRow}
     </div>
+    ${extremesSection(stats.extremes)}
+    ${furthestSection(stats.furthest)}
   `;
 }

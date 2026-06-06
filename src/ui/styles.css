@@ -477,6 +477,130 @@ body {
   min-width: 2px;
 }
 
+/* Per-continent breakdown chips + milestone badge */
+.continent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.continent-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.continent-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px;
+  background: var(--panel-2);
+  border-radius: 999px;
+  font-size: 11.5px;
+}
+
+.continent-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.continent-count {
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+/* Sub-heading for secondary stat sections (Extremes, Furthest) */
+.stat-subhead {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+/* Compass extremes of visited cities */
+.extremes-section {
+  margin-top: 6px;
+}
+
+.extremes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.extreme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.extreme-dir {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.extreme-place {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Furthest-from-home stat */
+.furthest {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+}
+
+.furthest-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.furthest-value {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
 /* Map click popups */
 .maplibregl-popup-content {
   background: var(--panel) !important;
@@ -553,13 +677,17 @@ body {
   background: var(--accent);
 }
 
-/* Desktop write-mode: manually mark/unmark a place from its popup. A quiet
-   secondary action — deliberately lower in the visual hierarchy than the place
-   name and the visited status, which it sits beneath. */
-.fp-popup-toggle {
-  display: block;
-  width: fit-content;
+/* Desktop write-mode: quiet ghost actions (mark/unmark, set home) beneath the
+   place name + status — deliberately low in the visual hierarchy. */
+.fp-popup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-top: 10px;
+}
+
+.fp-popup-toggle,
+.fp-popup-home {
   padding: 4px 10px;
   font: inherit;
   font-size: 11px;
@@ -572,14 +700,31 @@ body {
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
-.fp-popup-toggle:hover {
+.fp-popup-toggle:hover,
+.fp-popup-home:hover {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.fp-popup-toggle:disabled {
+.fp-popup-toggle:disabled,
+.fp-popup-home:disabled {
   opacity: 0.6;
+  cursor: default;
+}
+
+/* Home pin marker — a small house badge in the accent color */
+.fp-home-marker {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
   cursor: default;
 }
 

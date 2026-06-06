@@ -1,6 +1,6 @@
 import { readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
-import type { RawTimelineImport, VisitedFile } from "../types";
+import type { HomePoint, RawTimelineImport, VisitedFile } from "../types";
 
 const VISITED_URL = `${import.meta.env.BASE_URL}data/visited.json`;
 
@@ -23,11 +23,22 @@ function sanitizeFilename(name: string): string {
   return cleaned.endsWith(".json") ? cleaned : `${cleaned}.json`;
 }
 
+// A home pin is only kept if it's well-formed: numeric coords + a string label.
+// Anything else (old files, hand-edits) is dropped, leaving `home` undefined.
+function normalizeHome(home: unknown): HomePoint | undefined {
+  if (!home || typeof home !== "object") return undefined;
+  const h = home as Record<string, unknown>;
+  if (typeof h.lat !== "number" || typeof h.lon !== "number") return undefined;
+  return { lat: h.lat, lon: h.lon, label: typeof h.label === "string" ? h.label : "" };
+}
+
 function normalizeVisitedShape(data: Partial<VisitedFile>): VisitedFile {
+  const home = normalizeHome(data.home);
   return {
     countries: Array.isArray(data.countries) ? data.countries : [],
     states: Array.isArray(data.states) ? data.states : [],
     cities: Array.isArray(data.cities) ? data.cities : [],
+    ...(home ? { home } : {}),
     updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : 0,
   };
 }
@@ -65,6 +76,7 @@ export async function saveVisited(merged: Omit<VisitedFile, "updatedAt">): Promi
     countries: Array.from(new Set(merged.countries)).sort(),
     states: Array.from(new Set(merged.states)).sort(),
     cities: Array.from(new Set(merged.cities)).sort(),
+    ...(merged.home ? { home: merged.home } : {}),
     updatedAt: Date.now(),
   };
   await mkdir(dir, { recursive: true });
@@ -87,9 +99,11 @@ export function mergeVisited(
   base: VisitedFile,
   add: { countries?: Iterable<string>; states?: Iterable<string>; cities?: Iterable<string> },
 ): Omit<VisitedFile, "updatedAt"> {
+  // Carry the existing home through — an import adds places, it must never wipe it.
   return {
     countries: Array.from(new Set([...base.countries, ...(add.countries ?? [])])).sort(),
     states: Array.from(new Set([...base.states, ...(add.states ?? [])])).sort(),
     cities: Array.from(new Set([...base.cities, ...(add.cities ?? [])])).sort(),
+    ...(base.home ? { home: base.home } : {}),
   };
 }
