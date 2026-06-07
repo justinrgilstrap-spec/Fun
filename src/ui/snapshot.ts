@@ -99,13 +99,40 @@ export async function saveSnapshot(
     showToast("Couldn't create the snapshot.", { variant: "error" });
     return;
   }
+
+  const file = new File([blob], "footprint.png", { type: "image/png" });
+
+  // Prefer the native share sheet (Web Share API) when the browser can share a
+  // file — iOS Safari, Android Chrome, macOS Safari, the Tauri WebKit shell. No
+  // native app or developer account needed. Falls back to a plain download where
+  // file-sharing isn't supported (desktop Firefox, some desktop Chrome configs).
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: "My Footprint",
+        text: `${headline(stats)} — mapped with Footprint`,
+      });
+      return; // The OS share sheet is its own confirmation.
+    } catch (err) {
+      // User dismissed the sheet — not an error, nothing more to do.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      // Any other failure (e.g. share unavailable at call time): fall through to
+      // the download so the action still does something.
+    }
+  }
+
+  downloadBlob(blob);
+  showToast("Snapshot saved.", { variant: "success" });
+}
+
+function downloadBlob(blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = "footprint.png";
   a.click();
   URL.revokeObjectURL(url);
-  showToast("Snapshot saved.", { variant: "success" });
 }
 
 function headline(s: SnapshotStats): string {
