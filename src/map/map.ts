@@ -25,6 +25,10 @@ export function createMap(container: HTMLElement, theme: MapTheme): MlMap {
     minZoom: 1,
     maxZoom: 16,
     renderWorldCopies: false,
+    // Retain the WebGL backbuffer so the snapshot feature can read pixels off the
+    // canvas (getCanvas().toDataURL / drawImage) at any time, not just mid-frame.
+    // In MapLibre v5 this lives under canvasContextAttributes.
+    canvasContextAttributes: { preserveDrawingBuffer: true },
     dragRotate: false,
     pitchWithRotate: false,
     touchPitch: false,

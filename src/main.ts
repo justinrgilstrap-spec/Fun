@@ -9,6 +9,7 @@ import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjectio
 import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
+import { saveSnapshot } from "./ui/snapshot";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
@@ -107,6 +108,7 @@ const mapEl = document.getElementById("map") as HTMLElement;
 const map = createMap(mapEl, currentTheme);
 const themeToggleBtn = document.getElementById("theme-toggle") as HTMLButtonElement;
 const globeToggleBtn = document.getElementById("globe-toggle") as HTMLButtonElement;
+const snapshotBtn = document.getElementById("snapshot-btn") as HTMLButtonElement;
 
 // Apply the current projection to the map and reflect it on the toggle button.
 // Called on first load and re-called after each theme change, since setStyle
@@ -170,6 +172,7 @@ async function renderFromCurrent() {
   if (hasData) {
     renderStats(statsEl, statsFrom(current));
     togglesEl.hidden = false;
+    snapshotBtn.hidden = false;
   }
   updateHomeMarker();
   // Keep the layer module's home state current so popups can show a "Your home"
@@ -362,6 +365,20 @@ globeToggleBtn.addEventListener("click", () => {
   currentProjection = currentProjection === "globe" ? "flat" : "globe";
   saveProjection(currentProjection);
   applyProjection();
+});
+
+snapshotBtn.addEventListener("click", async () => {
+  snapshotBtn.disabled = true;
+  try {
+    await saveSnapshot(map, {
+      // Headline countries = sovereign count, matching the sidebar number.
+      countries: countCountries(current.countries),
+      states: current.states.length,
+      cities: current.cities.length,
+    });
+  } finally {
+    snapshotBtn.disabled = false;
+  }
 });
 
 void bootstrap();
