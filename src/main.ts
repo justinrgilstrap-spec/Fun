@@ -6,7 +6,7 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
-import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
+import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
@@ -392,34 +392,26 @@ function mapOnce(event: string, timeoutMs = 2000): Promise<void> {
 }
 
 // The world framing for the snapshot: full longitude, latitude trimmed to cut
-// most of the empty Arctic/Antarctic that Mercator stretches.
+// most of the empty Arctic/Antarctic that Mercator stretches. Aspect ≈ 1.76, so
+// the fixed capture canvas below uses a matching landscape ratio.
 const WORLD_BOUNDS: [[number, number], [number, number]] = [
   [-180, -60],
   [180, 78],
 ];
+// Fixed off-screen capture size (CSS px), aspect-matched to WORLD_BOUNDS so the
+// world fills it with negligible margin. Independent of the live pane, so the
+// card frames identically on phone, tablet, and desktop. Backing pixels scale by
+// devicePixelRatio, keeping the export crisp.
+const SNAP_W = 1200;
+const SNAP_H = 680;
 
-// The pixel rectangle (device px) of WORLD_BOUNDS within the current canvas,
-// so the card can be cropped to exactly the world — always a clean landscape
-// frame, edge-to-edge, no matter the map pane's shape or platform. Assumes the
-// map is currently framed on WORLD_BOUNDS (flat projection, post-fitBounds).
-function worldCrop() {
-  const canvas = map.getCanvas();
-  const dpr = canvas.clientWidth ? canvas.width / canvas.clientWidth : 1;
-  const nw = map.project([WORLD_BOUNDS[0][0], WORLD_BOUNDS[1][1]]); // [-180, 78]
-  const se = map.project([WORLD_BOUNDS[1][0], WORLD_BOUNDS[0][1]]); // [180, -60]
-  const clampX = (x: number) => Math.max(0, Math.min(x, canvas.clientWidth));
-  const clampY = (y: number) => Math.max(0, Math.min(y, canvas.clientHeight));
-  const x0 = clampX(nw.x);
-  const y0 = clampY(nw.y);
-  const x1 = clampX(se.x);
-  const y1 = clampY(se.y);
-  return { sx: x0 * dpr, sy: y0 * dpr, sw: (x1 - x0) * dpr, sh: (y1 - y0) * dpr };
-}
-
-// Snapshot always shows the *whole* world flat (Mercator), so every visited place
-// is on the card — a globe can only ever show the hemisphere facing the camera.
-// We briefly reframe the live map to a trimmed full-world view, capture, then
-// restore the user's exact projection + camera, so their screen ends up unchanged.
+// Snapshot always shows the whole flat world with countries filled — the most
+// legible, consistent share card, regardless of the live view (globe, a city
+// zoom, the Regions layer…). We render the map at a fixed off-screen landscape
+// size (a phone's narrow canvas literally can't fit the world at min zoom, so
+// cropping the live pane can't work), force the countries layer + flat
+// projection, capture, then restore the user's exact view. An overlay hides the
+// brief reframe.
 async function captureWorldSnapshot(): Promise<void> {
   const cam = {
     center: map.getCenter(),
@@ -427,33 +419,43 @@ async function captureWorldSnapshot(): Promise<void> {
     bearing: map.getBearing(),
     pitch: map.getPitch(),
   };
-  const prevMinZoom = map.getMinZoom();
+  const prevLayer = (document.querySelector<HTMLInputElement>('input[name="layer"]:checked')
+    ?.value ?? "countries") as LayerKind;
+  const mapEl = map.getContainer();
+  const prevCss = mapEl.style.cssText;
 
-  setProjection(map, "flat");
-  // Let the fit go below the app's normal minZoom if needed to get the whole
-  // world into the (possibly narrow) map canvas.
-  map.setMinZoom(0);
-  // Trim most of the empty Arctic/Antarctic so Mercator's polar stretch doesn't
-  // dominate the card with white space.
-  map.fitBounds(WORLD_BOUNDS, { animate: false, padding: 0 });
-  await mapOnce("idle");
+  const overlay = document.createElement("div");
+  overlay.className = "snap-overlay";
+  overlay.textContent = "Preparing snapshot…";
+  document.body.appendChild(overlay);
 
-  await saveSnapshot(
-    map,
-    {
+  try {
+    // Fixed landscape canvas, positioned off to the side and hidden by the
+    // overlay. The WebGL buffer still renders and is readable (preserveDrawingBuffer).
+    mapEl.style.cssText = `position:fixed;top:0;left:0;width:${SNAP_W}px;height:${SNAP_H}px;`;
+    map.resize();
+
+    applyLayer(map, "countries");
+    setProjection(map, "flat");
+    map.fitBounds(WORLD_BOUNDS, { animate: false, padding: 0 });
+    await mapOnce("idle");
+
+    await saveSnapshot(map, {
       // Headline countries = sovereign count, matching the sidebar number.
       countries: countCountries(current.countries),
       states: current.states.length,
       cities: current.cities.length,
-    },
-    worldCrop(),
-  );
-
-  // Restore the user's view: projection (+ its rotate/tilt handlers and button
-  // state) via applyProjection, then the exact camera they were looking at.
-  map.setMinZoom(prevMinZoom);
-  applyProjection();
-  map.jumpTo(cam);
+    });
+  } finally {
+    // Restore the live pane size, the user's layer, projection (+ handlers and
+    // button state), and the exact camera they were looking at.
+    mapEl.style.cssText = prevCss;
+    map.resize();
+    applyLayer(map, prevLayer);
+    applyProjection();
+    map.jumpTo(cam);
+    overlay.remove();
+  }
 }
 
 void bootstrap();

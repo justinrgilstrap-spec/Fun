@@ -241,6 +241,22 @@ body {
   z-index: 8;
 }
 
+/* Covers the viewport while a snapshot is being framed off-screen, hiding the
+   brief map reframe. Below toasts (z 1000), above all map UI. */
+.snap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--map-bg);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
 /* Section headings */
 .stats h2,
 .layer-toggles h2 {

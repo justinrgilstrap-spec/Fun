@@ -7,35 +7,19 @@ export interface SnapshotStats {
   cities: number;
 }
 
-// A sub-rectangle of the map canvas, in device pixels. When passed, only this
-// region is drawn onto the card — used to crop the export to the exact world
-// bounds so the card is always landscape and edge-to-edge, regardless of the
-// live map pane's shape. Omit to use the whole canvas.
-export interface SnapshotCrop {
-  sx: number;
-  sy: number;
-  sw: number;
-  sh: number;
-}
-
-// Composite the live map canvas with a headline-stats caption strip into a PNG
-// and trigger a download. Relies on the map being created with
+// Composite the map canvas with a headline-stats caption strip into a PNG and
+// share/download it. Relies on the map being created with
 // preserveDrawingBuffer:true (see createMap) so getCanvas() still holds pixels.
+// The caller (captureWorldSnapshot in main.ts) frames the map to a fixed
+// landscape world before calling, so the whole canvas IS the card — no cropping.
 // Colours and fonts are read from the active theme's CSS variables, so the card
 // matches light/dark and the in-app type.
-export async function saveSnapshot(
-  map: MlMap,
-  stats: SnapshotStats,
-  crop?: SnapshotCrop,
-): Promise<void> {
+export async function saveSnapshot(map: MlMap, stats: SnapshotStats): Promise<void> {
   const src = map.getCanvas();
   // Work in device pixels so the export stays crisp on HiDPI screens.
   const scale = src.clientWidth ? src.width / src.clientWidth : 1;
-  // The map area of the card: the crop if given, else the whole canvas.
-  const sx = crop ? crop.sx : 0;
-  const sy = crop ? crop.sy : 0;
-  const w = Math.round(crop ? crop.sw : src.width);
-  const h = Math.round(crop ? crop.sh : src.height);
+  const w = src.width;
+  const h = src.height;
 
   const cs = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
@@ -65,8 +49,8 @@ export async function saveSnapshot(
     /* non-fatal — fall back to whatever's available */
   }
 
-  // Map image on top — the cropped world region (or whole canvas) at 1:1.
-  ctx.drawImage(src, sx, sy, w, h, 0, 0, w, h);
+  // Map image on top — the whole (already world-framed) canvas at 1:1.
+  ctx.drawImage(src, 0, 0, w, h);
 
   // Caption strip below the map.
   ctx.fillStyle = panel;
