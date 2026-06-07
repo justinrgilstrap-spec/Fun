@@ -5,7 +5,7 @@ import maplibregl from "maplibre-gl";
 import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
-import { createMap, setMapTheme, type MapTheme } from "./map/map";
+import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
 import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
@@ -14,6 +14,7 @@ import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
 const SIDEBAR_KEY = "footprint.sidebar";
+const PROJECTION_KEY = "footprint.projection";
 const MOBILE_BREAKPOINT = 768;
 
 function loadTheme(): MapTheme {
@@ -27,8 +28,16 @@ function applyThemeToDocument(theme: MapTheme) {
   document.documentElement.setAttribute("data-theme", theme);
 }
 
+function loadProjection(): MapProjection {
+  return localStorage.getItem(PROJECTION_KEY) === "globe" ? "globe" : "flat";
+}
+function saveProjection(projection: MapProjection) {
+  localStorage.setItem(PROJECTION_KEY, projection);
+}
+
 let currentTheme = loadTheme();
 applyThemeToDocument(currentTheme);
+let currentProjection = loadProjection();
 
 const appEl = document.getElementById("app") as HTMLElement;
 const sidebarToggleBtn = document.getElementById("sidebar-toggle") as HTMLButtonElement;
@@ -97,11 +106,22 @@ const mapEl = document.getElementById("map") as HTMLElement;
 
 const map = createMap(mapEl, currentTheme);
 const themeToggleBtn = document.getElementById("theme-toggle") as HTMLButtonElement;
+const globeToggleBtn = document.getElementById("globe-toggle") as HTMLButtonElement;
+
+// Apply the current projection to the map and reflect it on the toggle button.
+// Called on first load and re-called after each theme change, since setStyle
+// resets the projection to mercator (projection is part of the style).
+function applyProjection() {
+  setProjection(map, currentProjection);
+  globeToggleBtn.setAttribute("aria-pressed", currentProjection === "globe" ? "true" : "false");
+}
+
 let mapReady = false;
 const onMapReady = new Promise<void>((resolve) => {
   map.on("load", () => {
     mapReady = true;
     map.resize();
+    applyProjection();
     resolve();
   });
 });
@@ -332,8 +352,16 @@ themeToggleBtn.addEventListener("click", async () => {
   saveTheme(currentTheme);
   applyThemeToDocument(currentTheme);
   await setMapTheme(map, currentTheme);
+  // setStyle resets the projection to mercator — restore the chosen one.
+  applyProjection();
   await renderFromCurrent();
   themeToggleBtn.disabled = false;
+});
+
+globeToggleBtn.addEventListener("click", () => {
+  currentProjection = currentProjection === "globe" ? "flat" : "globe";
+  saveProjection(currentProjection);
+  applyProjection();
 });
 
 void bootstrap();
