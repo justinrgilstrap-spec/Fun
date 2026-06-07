@@ -370,15 +370,67 @@ globeToggleBtn.addEventListener("click", () => {
 snapshotBtn.addEventListener("click", async () => {
   snapshotBtn.disabled = true;
   try {
-    await saveSnapshot(map, {
-      // Headline countries = sovereign count, matching the sidebar number.
-      countries: countCountries(current.countries),
-      states: current.states.length,
-      cities: current.cities.length,
-    });
+    await captureWorldSnapshot();
   } finally {
     snapshotBtn.disabled = false;
   }
 });
+
+// Resolve once the map fires `event`, or after `timeoutMs` as a fallback so a
+// snapshot never hangs if `idle` is slow to fire (tiles already cached, etc.).
+function mapOnce(event: string, timeoutMs = 2000): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    map.once(event, finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+// Snapshot always shows the *whole* world flat (Mercator), so every visited place
+// is on the card — a globe can only ever show the hemisphere facing the camera.
+// We briefly reframe the live map to a trimmed full-world view, capture, then
+// restore the user's exact projection + camera, so their screen ends up unchanged.
+async function captureWorldSnapshot(): Promise<void> {
+  const cam = {
+    center: map.getCenter(),
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+  const prevMinZoom = map.getMinZoom();
+
+  setProjection(map, "flat");
+  // Let the fit go below the app's normal minZoom if needed to get the whole
+  // world into the (possibly narrow) map canvas.
+  map.setMinZoom(0);
+  // Trim most of the empty Arctic/Antarctic so Mercator's polar stretch doesn't
+  // dominate the card with white space.
+  map.fitBounds(
+    [
+      [-180, -60],
+      [180, 78],
+    ],
+    { animate: false, padding: 0 },
+  );
+  await mapOnce("idle");
+
+  await saveSnapshot(map, {
+    // Headline countries = sovereign count, matching the sidebar number.
+    countries: countCountries(current.countries),
+    states: current.states.length,
+    cities: current.cities.length,
+  });
+
+  // Restore the user's view: projection (+ its rotate/tilt handlers and button
+  // state) via applyProjection, then the exact camera they were looking at.
+  map.setMinZoom(prevMinZoom);
+  applyProjection();
+  map.jumpTo(cam);
+}
 
 void bootstrap();
