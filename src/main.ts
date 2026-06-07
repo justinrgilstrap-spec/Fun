@@ -391,6 +391,31 @@ function mapOnce(event: string, timeoutMs = 2000): Promise<void> {
   });
 }
 
+// The world framing for the snapshot: full longitude, latitude trimmed to cut
+// most of the empty Arctic/Antarctic that Mercator stretches.
+const WORLD_BOUNDS: [[number, number], [number, number]] = [
+  [-180, -60],
+  [180, 78],
+];
+
+// The pixel rectangle (device px) of WORLD_BOUNDS within the current canvas,
+// so the card can be cropped to exactly the world — always a clean landscape
+// frame, edge-to-edge, no matter the map pane's shape or platform. Assumes the
+// map is currently framed on WORLD_BOUNDS (flat projection, post-fitBounds).
+function worldCrop() {
+  const canvas = map.getCanvas();
+  const dpr = canvas.clientWidth ? canvas.width / canvas.clientWidth : 1;
+  const nw = map.project([WORLD_BOUNDS[0][0], WORLD_BOUNDS[1][1]]); // [-180, 78]
+  const se = map.project([WORLD_BOUNDS[1][0], WORLD_BOUNDS[0][1]]); // [180, -60]
+  const clampX = (x: number) => Math.max(0, Math.min(x, canvas.clientWidth));
+  const clampY = (y: number) => Math.max(0, Math.min(y, canvas.clientHeight));
+  const x0 = clampX(nw.x);
+  const y0 = clampY(nw.y);
+  const x1 = clampX(se.x);
+  const y1 = clampY(se.y);
+  return { sx: x0 * dpr, sy: y0 * dpr, sw: (x1 - x0) * dpr, sh: (y1 - y0) * dpr };
+}
+
 // Snapshot always shows the *whole* world flat (Mercator), so every visited place
 // is on the card — a globe can only ever show the hemisphere facing the camera.
 // We briefly reframe the live map to a trimmed full-world view, capture, then
@@ -410,21 +435,19 @@ async function captureWorldSnapshot(): Promise<void> {
   map.setMinZoom(0);
   // Trim most of the empty Arctic/Antarctic so Mercator's polar stretch doesn't
   // dominate the card with white space.
-  map.fitBounds(
-    [
-      [-180, -60],
-      [180, 78],
-    ],
-    { animate: false, padding: 0 },
-  );
+  map.fitBounds(WORLD_BOUNDS, { animate: false, padding: 0 });
   await mapOnce("idle");
 
-  await saveSnapshot(map, {
-    // Headline countries = sovereign count, matching the sidebar number.
-    countries: countCountries(current.countries),
-    states: current.states.length,
-    cities: current.cities.length,
-  });
+  await saveSnapshot(
+    map,
+    {
+      // Headline countries = sovereign count, matching the sidebar number.
+      countries: countCountries(current.countries),
+      states: current.states.length,
+      cities: current.cities.length,
+    },
+    worldCrop(),
+  );
 
   // Restore the user's view: projection (+ its rotate/tilt handlers and button
   // state) via applyProjection, then the exact camera they were looking at.
