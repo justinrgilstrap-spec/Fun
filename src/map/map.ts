@@ -2,6 +2,7 @@ import maplibregl, { Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 export type MapTheme = "light" | "dark";
+export type MapProjection = "flat" | "globe";
 
 // Vendored CARTO vector basemaps (Positron for light, Dark Matter for dark),
 // served from public/basemap/. They're the upstream CARTO GL styles with the
@@ -24,6 +25,10 @@ export function createMap(container: HTMLElement, theme: MapTheme): MlMap {
     minZoom: 1,
     maxZoom: 16,
     renderWorldCopies: false,
+    // Retain the WebGL backbuffer so the snapshot feature can read pixels off the
+    // canvas (getCanvas().toDataURL / drawImage) at any time, not just mid-frame.
+    // In MapLibre v5 this lives under canvasContextAttributes.
+    canvasContextAttributes: { preserveDrawingBuffer: true },
     dragRotate: false,
     pitchWithRotate: false,
     touchPitch: false,
@@ -33,6 +38,28 @@ export function createMap(container: HTMLElement, theme: MapTheme): MlMap {
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   return map;
+}
+
+// Switch between the flat mercator map and the 3D globe. The map is constructed
+// fully locked down (no rotate/pitch — see createMap); globe mode selectively
+// unlocks drag-rotate + tilt so the sphere feels alive, and flat mode re-locks it.
+// Projection lives in the style, so a theme change (setStyle) resets it to
+// mercator — main.ts re-applies the chosen projection after every theme switch.
+export function setProjection(map: MlMap, projection: MapProjection): void {
+  if (projection === "globe") {
+    map.setMaxPitch(85);
+    map.dragRotate.enable();
+    map.touchZoomRotate.enableRotation();
+    map.setProjection({ type: "globe" });
+  } else {
+    // Undo any bearing/tilt the globe allowed before re-locking, so the flat map
+    // never ends up rotated or pitched.
+    map.jumpTo({ bearing: 0, pitch: 0 });
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    map.setMaxPitch(0);
+    map.setProjection({ type: "mercator" });
+  }
 }
 
 export function setMapTheme(map: MlMap, theme: MapTheme): Promise<void> {

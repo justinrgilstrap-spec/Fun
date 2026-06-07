@@ -100,6 +100,7 @@ body {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  gap: 8px;
   min-height: 40px;
 }
 
@@ -205,6 +206,25 @@ body {
 
 .floating-btn:hover {
   background: var(--btn-hover);
+}
+
+/* Globe projection toggle — bottom-left, clear of the hamburger (top-left), the
+   zoom controls (top-right), the attribution (bottom-right), and toasts (bottom-
+   center). Lights up in accent when the globe is active. */
+.floating-btn--globe {
+  top: auto;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+}
+
+.floating-btn--globe[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.floating-btn--globe[aria-pressed="true"]:hover {
+  background: var(--accent-hover);
 }
 
 .floating-btn:active {

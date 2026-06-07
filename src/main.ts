@@ -5,15 +5,17 @@ import maplibregl from "maplibre-gl";
 import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
-import { createMap, setMapTheme, type MapTheme } from "./map/map";
+import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
 import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
+import { saveSnapshot } from "./ui/snapshot";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
 const SIDEBAR_KEY = "footprint.sidebar";
+const PROJECTION_KEY = "footprint.projection";
 const MOBILE_BREAKPOINT = 768;
 
 function loadTheme(): MapTheme {
@@ -27,8 +29,16 @@ function applyThemeToDocument(theme: MapTheme) {
   document.documentElement.setAttribute("data-theme", theme);
 }
 
+function loadProjection(): MapProjection {
+  return localStorage.getItem(PROJECTION_KEY) === "globe" ? "globe" : "flat";
+}
+function saveProjection(projection: MapProjection) {
+  localStorage.setItem(PROJECTION_KEY, projection);
+}
+
 let currentTheme = loadTheme();
 applyThemeToDocument(currentTheme);
+let currentProjection = loadProjection();
 
 const appEl = document.getElementById("app") as HTMLElement;
 const sidebarToggleBtn = document.getElementById("sidebar-toggle") as HTMLButtonElement;
@@ -97,11 +107,23 @@ const mapEl = document.getElementById("map") as HTMLElement;
 
 const map = createMap(mapEl, currentTheme);
 const themeToggleBtn = document.getElementById("theme-toggle") as HTMLButtonElement;
+const globeToggleBtn = document.getElementById("globe-toggle") as HTMLButtonElement;
+const snapshotBtn = document.getElementById("snapshot-btn") as HTMLButtonElement;
+
+// Apply the current projection to the map and reflect it on the toggle button.
+// Called on first load and re-called after each theme change, since setStyle
+// resets the projection to mercator (projection is part of the style).
+function applyProjection() {
+  setProjection(map, currentProjection);
+  globeToggleBtn.setAttribute("aria-pressed", currentProjection === "globe" ? "true" : "false");
+}
+
 let mapReady = false;
 const onMapReady = new Promise<void>((resolve) => {
   map.on("load", () => {
     mapReady = true;
     map.resize();
+    applyProjection();
     resolve();
   });
 });
@@ -150,6 +172,7 @@ async function renderFromCurrent() {
   if (hasData) {
     renderStats(statsEl, statsFrom(current));
     togglesEl.hidden = false;
+    snapshotBtn.hidden = false;
   }
   updateHomeMarker();
   // Keep the layer module's home state current so popups can show a "Your home"
@@ -332,8 +355,105 @@ themeToggleBtn.addEventListener("click", async () => {
   saveTheme(currentTheme);
   applyThemeToDocument(currentTheme);
   await setMapTheme(map, currentTheme);
+  // setStyle resets the projection to mercator — restore the chosen one.
+  applyProjection();
   await renderFromCurrent();
   themeToggleBtn.disabled = false;
 });
+
+globeToggleBtn.addEventListener("click", () => {
+  currentProjection = currentProjection === "globe" ? "flat" : "globe";
+  saveProjection(currentProjection);
+  applyProjection();
+});
+
+snapshotBtn.addEventListener("click", async () => {
+  snapshotBtn.disabled = true;
+  try {
+    await captureWorldSnapshot();
+  } finally {
+    snapshotBtn.disabled = false;
+  }
+});
+
+// Resolve once the map fires `event`, or after `timeoutMs` as a fallback so a
+// snapshot never hangs if `idle` is slow to fire (tiles already cached, etc.).
+function mapOnce(event: string, timeoutMs = 2000): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    map.once(event, finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+// The world framing for the snapshot: full longitude, latitude trimmed to cut
+// most of the empty Arctic/Antarctic that Mercator stretches.
+const WORLD_BOUNDS: [[number, number], [number, number]] = [
+  [-180, -60],
+  [180, 78],
+];
+
+// The pixel rectangle (device px) of WORLD_BOUNDS within the current canvas,
+// so the card can be cropped to exactly the world — always a clean landscape
+// frame, edge-to-edge, no matter the map pane's shape or platform. Assumes the
+// map is currently framed on WORLD_BOUNDS (flat projection, post-fitBounds).
+function worldCrop() {
+  const canvas = map.getCanvas();
+  const dpr = canvas.clientWidth ? canvas.width / canvas.clientWidth : 1;
+  const nw = map.project([WORLD_BOUNDS[0][0], WORLD_BOUNDS[1][1]]); // [-180, 78]
+  const se = map.project([WORLD_BOUNDS[1][0], WORLD_BOUNDS[0][1]]); // [180, -60]
+  const clampX = (x: number) => Math.max(0, Math.min(x, canvas.clientWidth));
+  const clampY = (y: number) => Math.max(0, Math.min(y, canvas.clientHeight));
+  const x0 = clampX(nw.x);
+  const y0 = clampY(nw.y);
+  const x1 = clampX(se.x);
+  const y1 = clampY(se.y);
+  return { sx: x0 * dpr, sy: y0 * dpr, sw: (x1 - x0) * dpr, sh: (y1 - y0) * dpr };
+}
+
+// Snapshot always shows the *whole* world flat (Mercator), so every visited place
+// is on the card — a globe can only ever show the hemisphere facing the camera.
+// We briefly reframe the live map to a trimmed full-world view, capture, then
+// restore the user's exact projection + camera, so their screen ends up unchanged.
+async function captureWorldSnapshot(): Promise<void> {
+  const cam = {
+    center: map.getCenter(),
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+  const prevMinZoom = map.getMinZoom();
+
+  setProjection(map, "flat");
+  // Let the fit go below the app's normal minZoom if needed to get the whole
+  // world into the (possibly narrow) map canvas.
+  map.setMinZoom(0);
+  // Trim most of the empty Arctic/Antarctic so Mercator's polar stretch doesn't
+  // dominate the card with white space.
+  map.fitBounds(WORLD_BOUNDS, { animate: false, padding: 0 });
+  await mapOnce("idle");
+
+  await saveSnapshot(
+    map,
+    {
+      // Headline countries = sovereign count, matching the sidebar number.
+      countries: countCountries(current.countries),
+      states: current.states.length,
+      cities: current.cities.length,
+    },
+    worldCrop(),
+  );
+
+  // Restore the user's view: projection (+ its rotate/tilt handlers and button
+  // state) via applyProjection, then the exact camera they were looking at.
+  map.setMinZoom(prevMinZoom);
+  applyProjection();
+  map.jumpTo(cam);
+}
 
 void bootstrap();
