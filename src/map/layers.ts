@@ -124,19 +124,20 @@ async function ensureCities(map: MlMap): Promise<void> {
     source: "cities",
     paint: {
       // One top-level zoom curve (MapLibre allows only one, and `zoom` can't sit
-      // inside a `case`). Each stop's value is a per-feature `case`: visited dots
-      // keep the original 3→10 curve; unvisited stay at radius 0 until zoom 6,
-      // then grow to a small dot. Radius 0 means invisible AND not hit-tested, so
+      // inside a `case`). Each stop's value is a per-feature `case`. Unvisited dots
+      // stay at radius 0 until ~zoom 5, then fade in larger than before so missed
+      // cities are easy to spot and tap without zooming way in (the rendered radius
+      // is also the click target). Radius 0 means invisible AND not hit-tested, so
       // zoomed out there are no stray click targets.
       "circle-radius": [
         "interpolate",
         ["linear"],
         ["zoom"],
         1, ["case", ["==", ["get", "visited"], 1], 3, 0],
-        6, ["case", ["==", ["get", "visited"], 1], 6, 0],
-        7.5, ["case", ["==", ["get", "visited"], 1], 7.5, 3],
-        10, ["case", ["==", ["get", "visited"], 1], 10, 4.5],
-        12, ["case", ["==", ["get", "visited"], 1], 10, 5.5],
+        4, ["case", ["==", ["get", "visited"], 1], 4.5, 0],
+        5, ["case", ["==", ["get", "visited"], 1], 6, 4.5],
+        7, ["case", ["==", ["get", "visited"], 1], 8, 6],
+        12, ["case", ["==", ["get", "visited"], 1], 11, 9],
       ],
       // Unvisited dots use the brighter outline blue as their fill so they read
       // against the dark basemap (the dimmer NOT_VISITED_FILL is near-invisible here).
