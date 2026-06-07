@@ -713,6 +713,22 @@ body {
   cursor: default;
 }
 
+/* Popup badge marking a place that already is the home pin */
+.fp-popup-home-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 3px 9px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
 /* Home pin marker — a small house badge in the accent color */
 .fp-home-marker {
   width: 26px;

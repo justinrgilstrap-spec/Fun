@@ -2,7 +2,7 @@ import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from "geojson";
 import { loadCountries, loadStates, loadCities, countryIso, stateIso, cityId } from "../geo/datasets";
 import { isTauri } from "../store/visitedFile";
-import type { LayerKind } from "../types";
+import type { LayerKind, HomePoint } from "../types";
 
 interface LayerState {
   visitedCountries: Set<string>;
@@ -230,21 +230,31 @@ function escapeHtml(s: string): string {
   );
 }
 
-function popupHTML(title: string, subtitle: string, visited: boolean, canToggle: boolean): string {
+function popupHTML(
+  title: string,
+  subtitle: string,
+  visited: boolean,
+  canToggle: boolean,
+  isHome: boolean,
+): string {
   const sub = subtitle ? `<div class="fp-popup-sub">${escapeHtml(subtitle)}</div>` : "";
   const status = visited
     ? `<div class="fp-popup-status is-visited">Visited</div>`
     : `<div class="fp-popup-status">Not visited yet</div>`;
+  // When this place is already the home pin, show a badge instead of the (now
+  // redundant) "Set as home" button. Visible in any build — it just reflects state.
+  const homeBadge = isHome ? `<div class="fp-popup-home-badge">🏠 Your home</div>` : "";
   // Desktop write-mode only: quiet ghost buttons to fix spatial-join misses and
   // set the home pin without re-importing/hand-editing. Hidden in the read-only
-  // browser build (`canToggle` is false).
-  const actions = canToggle
-    ? `<div class="fp-popup-actions">` +
-      `<button type="button" class="fp-popup-toggle">${visited ? "Unmark visited" : "Mark visited"}</button>` +
-      `<button type="button" class="fp-popup-home">Set as home</button>` +
-      `</div>`
+  // browser build (`canToggle` is false). The "Set as home" button is omitted when
+  // this place already is home (the badge stands in for it).
+  const toggleBtn = canToggle
+    ? `<button type="button" class="fp-popup-toggle">${visited ? "Unmark visited" : "Mark visited"}</button>`
     : "";
-  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}${actions}</div>`;
+  const homeBtn =
+    canToggle && !isHome ? `<button type="button" class="fp-popup-home">Set as home</button>` : "";
+  const actions = toggleBtn || homeBtn ? `<div class="fp-popup-actions">${toggleBtn}${homeBtn}</div>` : "";
+  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}${homeBadge}${actions}</div>`;
 }
 
 function str(props: Record<string, unknown> | null, key: string): string {
@@ -270,7 +280,12 @@ function featureKey(kind: LayerKind, props: Record<string, unknown> | null): str
 }
 
 // Builds the popup body for a clicked feature, per layer's property scheme.
-function contentFor(kind: LayerKind, props: Record<string, unknown> | null, canToggle: boolean): string {
+function contentFor(
+  kind: LayerKind,
+  props: Record<string, unknown> | null,
+  canToggle: boolean,
+  isHome: boolean,
+): string {
   const visited = props?.visited === 1;
   if (kind === "countries") {
     const continent = str(props, "CONTINENT");
@@ -279,6 +294,7 @@ function contentFor(kind: LayerKind, props: Record<string, unknown> | null, canT
       continent === "Seven seas (open ocean)" ? "" : continent,
       visited,
       canToggle,
+      isHome,
     );
   }
   if (kind === "states") {
@@ -287,6 +303,7 @@ function contentFor(kind: LayerKind, props: Record<string, unknown> | null, canT
       joinParts([str(props, "type_en"), str(props, "admin")]),
       visited,
       canToggle,
+      isHome,
     );
   }
   return popupHTML(
@@ -294,7 +311,23 @@ function contentFor(kind: LayerKind, props: Record<string, unknown> | null, canT
     joinParts([str(props, "ADM1NAME"), str(props, "ADM0NAME")]),
     visited,
     canToggle,
+    isHome,
   );
+}
+
+// Latest home pin, kept in sync by main.ts so popups can tell whether a clicked
+// place already is home. Compared by coordinate: a city feature's point IS its
+// centroid, and "Set as home" stores that snapped centroid, so they match.
+let currentHome: HomePoint | null = null;
+export function setHomePoint(home: HomePoint | null): void {
+  currentHome = home;
+}
+
+const HOME_EPS = 1e-4;
+function isHomeFeature(kind: LayerKind, feature: Feature): boolean {
+  if (kind !== "cities" || !currentHome || feature.geometry.type !== "Point") return false;
+  const [lon, lat] = feature.geometry.coordinates as [number, number];
+  return Math.abs(lon - currentHome.lon) < HOME_EPS && Math.abs(lat - currentHome.lat) < HOME_EPS;
 }
 
 // The "visited" key for a feature — the same ID scheme used by the visited sets,
@@ -333,6 +366,7 @@ function wirePopupActions(
   kind: LayerKind,
   feature: Feature,
   ll: [number, number],
+  isHome: boolean,
 ): void {
   const root = p.getElement();
   if (!root) return;
@@ -345,8 +379,8 @@ function wirePopupActions(
         toggleBtn.disabled = true;
         const nowVisited = await toggleHandler!(kind, visitedId(kind, feature));
         const props = { ...(feature.properties ?? {}), visited: nowVisited ? 1 : 0 };
-        p.setHTML(contentFor(kind, props, true));
-        wirePopupActions(p, kind, feature, ll);
+        p.setHTML(contentFor(kind, props, true, isHome));
+        wirePopupActions(p, kind, feature, ll, isHome);
       },
       { once: true },
     );
@@ -412,13 +446,14 @@ export function initInteractions(map: MlMap): void {
           ? (feature.geometry.coordinates as [number, number])
           : [e.lngLat.lng, e.lngLat.lat];
       const canToggle = isTauri();
+      const home = isHomeFeature(kind, feature as unknown as Feature);
       popup?.remove();
       popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "240px" })
         .setLngLat(ll)
-        .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null, canToggle))
+        .setHTML(contentFor(kind, feature.properties as Record<string, unknown> | null, canToggle, home))
         .addTo(map);
       pinnedId = id;
-      if (canToggle) wirePopupActions(popup, kind, feature as unknown as Feature, ll);
+      if (canToggle) wirePopupActions(popup, kind, feature as unknown as Feature, ll, home);
       // Keep pinnedId in sync however the popup closes (✕, re-click, replaced).
       popup.on("close", () => {
         if (pinnedId === id) pinnedId = null;

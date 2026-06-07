@@ -6,7 +6,7 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, type MapTheme } from "./map/map";
-import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler } from "./map/layers";
+import { initLayers, setLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { showToast } from "./ui/toast";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
@@ -152,6 +152,9 @@ async function renderFromCurrent() {
     togglesEl.hidden = false;
   }
   updateHomeMarker();
+  // Keep the layer module's home state current so popups can show a "Your home"
+  // badge on the home city instead of a redundant "Set as home" button.
+  setHomePoint(current.home ?? null);
 }
 
 // A house marker at the home pin. Markers live in the map's DOM container, not the
