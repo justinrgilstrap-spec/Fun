@@ -257,6 +257,26 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* Session-preview badge (browser imports only) — pinned over the map */
+.preview-badge {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* Place search */
 .search {
   position: relative;

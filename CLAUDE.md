@@ -37,7 +37,11 @@ as a **native macOS desktop app** (built with Tauri, read/write).
 - **PWA:** installable to the iOS/Android home screen via
   `public/manifest.webmanifest`, an `apple-touch-icon`, and `apple-mobile-web-app-*`
   meta tags in `index.html` (icons in `public/icons/`). The read-only web build is
-  what gets installed.
+  what gets installed. `public/sw.js` (registered by `main.ts` in production
+  browser builds only — never dev or Tauri) makes it work offline: precached app
+  shell, stale-while-revalidate for `visited.json` + reference GeoJSON (new data
+  shows on the *next* open), capped cache-first for CARTO tiles. Bump `VERSION`
+  in `sw.js` when its caching logic changes.
 
 ## Commands
 
@@ -141,6 +145,9 @@ renders.
   match the existing style. State lives in module-level variables in `main.ts`.
 - **Browser vs. Tauri:** feature-detect with `isTauri()` (checks
   `__TAURI_INTERNALS__`). Any save/write path must guard against browser mode.
+  Browser imports are **session-only previews**: the pipeline runs in memory,
+  the map updates, and a "Preview — not saved" badge shows until reload —
+  nothing is persisted and the raw file is not archived.
 - **MapLibre resize quirk:** the map needs nudged `resize()` calls after sidebar
   transitions and via a `ResizeObserver` — flex children settle late. Don't remove
   these without testing the sidebar toggle.

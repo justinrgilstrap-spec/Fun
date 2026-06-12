@@ -1,5 +1,6 @@
 import type { ImportResult } from "../types";
 import { parseTimeline } from "./parser";
+import { showToast } from "../ui/toast";
 
 type Handler = (result: ImportResult, fileName: string) => void | Promise<void>;
 
@@ -18,7 +19,10 @@ export function setupDropzone(
       await onImport(result, file.name);
     } catch (err) {
       console.error("Failed to import:", err);
-      alert(`Failed to import ${file.name}:\n${(err as Error).message}`);
+      showToast(`Failed to import ${file.name}: ${(err as Error).message}`, {
+        variant: "error",
+        duration: 7000,
+      });
     } finally {
       el.classList.remove("processing");
     }

@@ -4,7 +4,7 @@ import "./ui/styles.css";
 import maplibregl from "maplibre-gl";
 import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
-import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
+import { loadVisited, saveVisited, saveRawImport, mergeVisited, isTauri } from "./store/visitedFile";
 import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
 import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint, flyToFeature, openFeaturePopup } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
@@ -105,6 +105,8 @@ const fileInput = document.getElementById("file-input") as HTMLInputElement;
 const statsEl = document.getElementById("stats") as HTMLElement;
 const togglesEl = document.getElementById("layer-toggles") as HTMLElement;
 const mapEl = document.getElementById("map") as HTMLElement;
+
+const previewBadge = document.getElementById("preview-badge") as HTMLElement;
 
 const map = createMap(mapEl, currentTheme);
 const themeToggleBtn = document.getElementById("theme-toggle") as HTMLButtonElement;
@@ -245,6 +247,14 @@ async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
 }
 
 async function bootstrap() {
+  // Offline support, web/PWA build only: sw.js caches the app shell and serves
+  // data stale-while-revalidate. Skipped in dev (would fight HMR) and in Tauri
+  // (files are already local). Registration is non-blocking and non-fatal.
+  if (import.meta.env.PROD && !isTauri() && "serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      .catch((err) => console.error("Service worker registration failed:", err));
+  }
   current = await loadVisited();
   await renderFromCurrent();
   initInteractions(map);
@@ -312,15 +322,29 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
     states: merged.states.length - current.states.length,
     cities: merged.cities.length - current.cities.length,
   };
-  current = await saveVisited(merged);
-  await saveRawImport(fileName, {
-    source: fileName,
-    importedAt: Date.now(),
-    visits: result.visits,
-    points: result.points,
-  });
-  await renderFromCurrent();
-  showToast(importSummary(added), { variant: "success" });
+  if (isTauri()) {
+    current = await saveVisited(merged);
+    await saveRawImport(fileName, {
+      source: fileName,
+      importedAt: Date.now(),
+      visits: result.visits,
+      points: result.points,
+    });
+    await renderFromCurrent();
+    showToast(importSummary(added), { variant: "success" });
+  } else {
+    // The browser build can't persist — render the import in-memory as a
+    // session-only preview (the Timeline export is created on the phone, so
+    // this is the one place it can be seen right away). A persistent badge
+    // marks the state as ephemeral; reload returns to the published data.
+    current = { ...merged, updatedAt: Date.now() };
+    previewBadge.hidden = false;
+    await renderFromCurrent();
+    showToast(`${importSummary(added)} Preview only — open the desktop app to save.`, {
+      variant: "success",
+      duration: 7000,
+    });
+  }
 });
 
 const layerInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="layer"]'));
@@ -344,7 +368,9 @@ async function activateLayer(kind: LayerKind): Promise<boolean> {
     return true;
   } catch (err) {
     console.error(`Failed to load ${kind} layer:`, err);
-    alert(`Could not load the ${kind} map data. Check your connection and try again.`);
+    showToast(`Could not load the ${kind} map data. Check your connection and try again.`, {
+      variant: "error",
+    });
     return false;
   } finally {
     if (needsLoad) {

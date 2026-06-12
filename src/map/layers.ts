@@ -158,18 +158,33 @@ const ENSURE: Record<LayerKind, (map: MlMap) => Promise<void>> = {
   cities: ensureCities,
 };
 
-// Push the latest visited sets into whatever sources are already on the map
-// (e.g. after an import adds new places). Datasets not yet loaded stay lazy.
-async function refreshLoadedData(map: MlMap): Promise<void> {
-  const countries = map.getSource("countries") as maplibregl.GeoJSONSource | undefined;
-  if (countries) countries.setData(await taggedCountries());
-  const states = map.getSource("states") as maplibregl.GeoJSONSource | undefined;
-  if (states) states.setData(await taggedStates());
-  const cities = map.getSource("cities") as maplibregl.GeoJSONSource | undefined;
-  if (cities) cities.setData(await taggedCities());
+const TAGGED: Record<LayerKind, () => Promise<FeatureCollection>> = {
+  countries: taggedCountries,
+  states: taggedStates,
+  cities: taggedCities,
+};
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
 }
 
 export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
+  // Work out which visited sets actually changed *before* adopting the new
+  // state, so only those sources get re-uploaded below. setData re-parses the
+  // whole GeoJSON (states is ~26 MB), so pushing unchanged data on every save
+  // made each "Mark visited" click visibly hitch once Regions had been opened.
+  const changed = (["countries", "states", "cities"] as const).filter(
+    (kind) =>
+      !setsEqual(
+        kind === "countries" ? state.visitedCountries : kind === "states" ? state.visitedStates : state.visitedCities,
+        kind === "countries" ? layerState.visitedCountries : kind === "states" ? layerState.visitedStates : layerState.visitedCities,
+      ),
+  );
+  // Sources created by the ensure* calls below are tagged with the new state
+  // already — only sources that predate this call can hold stale data.
+  const preexisting = new Set(changed.filter((kind) => map.getSource(kind)));
   layerState = state;
   // Countries supply the base outline shown in every view, so always load them.
   await ensureCountries(map);
@@ -177,8 +192,10 @@ export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
   if (currentLayer !== "countries") {
     await ENSURE[currentLayer](map);
   }
-  // Reflect updated visited sets in any already-loaded sources.
-  await refreshLoadedData(map);
+  for (const kind of preexisting) {
+    const src = map.getSource(kind) as maplibregl.GeoJSONSource | undefined;
+    if (src) src.setData(await TAGGED[kind]());
+  }
   applyLayer(map, currentLayer);
 }
 
