@@ -6,8 +6,9 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
 import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
-import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
+import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint, flyToFeature, openFeaturePopup } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
+import { initSearch } from "./ui/search";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
@@ -323,30 +324,61 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
 });
 
 const layerInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="layer"]'));
-layerInputs.forEach((input) => {
-  input.addEventListener("change", async () => {
-    if (!input.checked) return;
-    const kind = input.value as LayerKind;
-    const label = input.closest("label");
-    // The dataset isn't on the map yet on first selection (or after a theme
-    // rebuild), so show a spinner and lock the toggles while it loads.
-    const needsLoad = !map.getSource(kind);
+
+// Switch the map to a view layer, keeping the radio toggles in sync. Driven by
+// the radios themselves and by search-result selection. Returns false when the
+// dataset failed to load (the caller shouldn't fly to a feature that isn't there).
+async function activateLayer(kind: LayerKind): Promise<boolean> {
+  const input = layerInputs.find((i) => i.value === kind);
+  if (input && !input.checked) input.checked = true;
+  const label = input?.closest("label");
+  // The dataset isn't on the map yet on first selection (or after a theme
+  // rebuild), so show a spinner and lock the toggles while it loads.
+  const needsLoad = !map.getSource(kind);
+  if (needsLoad) {
+    label?.classList.add("loading");
+    layerInputs.forEach((i) => (i.disabled = true));
+  }
+  try {
+    await setLayer(map, kind);
+    return true;
+  } catch (err) {
+    console.error(`Failed to load ${kind} layer:`, err);
+    alert(`Could not load the ${kind} map data. Check your connection and try again.`);
+    return false;
+  } finally {
     if (needsLoad) {
-      label?.classList.add("loading");
-      layerInputs.forEach((i) => (i.disabled = true));
+      label?.classList.remove("loading");
+      layerInputs.forEach((i) => (i.disabled = false));
     }
-    try {
-      await setLayer(map, kind);
-    } catch (err) {
-      console.error(`Failed to load ${kind} layer:`, err);
-      alert(`Could not load the ${kind} map data. Check your connection and try again.`);
-    } finally {
-      if (needsLoad) {
-        label?.classList.remove("loading");
-        layerInputs.forEach((i) => (i.disabled = false));
-      }
-    }
+  }
+}
+
+layerInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (!input.checked) return;
+    void activateLayer(input.value as LayerKind);
   });
+});
+
+// Place search: results come from the same reference datasets the map renders,
+// so a selection switches to that result's view, flies to it, and opens the
+// standard inspect popup (with the write-mode "Mark visited" button on desktop).
+initSearch({
+  isVisited: (kind, id) => current[kind].includes(id),
+  onSelect: async (hit) => {
+    // On mobile the sidebar overlays the whole map — get it out of the way.
+    if (isMobile()) {
+      setSidebar("closed");
+      nudgeMapResize();
+    }
+    if (!mapReady) await onMapReady;
+    if (!(await activateLayer(hit.kind))) return;
+    flyToFeature(map, hit.kind, hit.feature);
+    // Opened immediately: the popup is anchored geographically, so it glides
+    // with the fly-to animation instead of popping in afterwards.
+    openFeaturePopup(map, hit.kind, hit.feature);
+  },
 });
 
 themeToggleBtn.addEventListener("click", async () => {
