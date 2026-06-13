@@ -556,23 +556,40 @@ function anchorFor(kind: LayerKind, feature: Feature): [number, number] {
   return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
 
+// A search pick should land the place in the middle of the screen quickly. The
+// default flyTo arcs out to the whole world and back over ~2.5 s, so for most of
+// the animation the target sits off to one side — which reads as "it didn't
+// center." A bounded, gentle move settles the place dead-centre fast instead.
+// `essential` keeps it running under prefers-reduced-motion (where it collapses
+// to an instant, still-centred jump).
+const FLY: { duration: number; curve: number; essential: true } = {
+  duration: 900,
+  curve: 1.2,
+  essential: true,
+};
+
 /** Fly the camera to a (search-result) feature: cities zoom to a point, polygons fit their bounds. */
 export function flyToFeature(map: MlMap, kind: LayerKind, feature: Feature): void {
   if (feature.geometry.type === "Point") {
     const [lon, lat] = feature.geometry.coordinates as [number, number];
     // Zoom 8 comfortably shows the surrounding city dots; never zoom *out* a
     // user who is already closer.
-    map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 8) });
+    map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 8), ...FLY });
     return;
   }
   const [minX, minY, maxX, maxY] = geomBbox(feature.geometry);
   // Antimeridian-spanning polygons (Russia, Fiji, the Aleutians) produce a
   // near-global bbox; center on the label point at a wide zoom instead.
   if (maxX - minX > 170) {
-    map.flyTo({ center: anchorFor(kind, feature), zoom: kind === "countries" ? 2.5 : 4 });
+    map.flyTo({ center: anchorFor(kind, feature), zoom: kind === "countries" ? 2.5 : 4, ...FLY });
     return;
   }
-  map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 48, maxZoom: kind === "countries" ? 6 : 8 });
+  map.fitBounds([[minX, minY], [maxX, maxY]], {
+    padding: 48,
+    maxZoom: kind === "countries" ? 6 : 8,
+    duration: FLY.duration,
+    essential: FLY.essential,
+  });
 }
 
 /**
