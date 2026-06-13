@@ -50,6 +50,18 @@
             </div>
           </div>
         </header>
+        <section class="search" aria-label="Place search">
+          <input
+            id="search-input"
+            type="search"
+            placeholder="Search countries, regions, cities…"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search places"
+            enterkeyhint="search"
+          />
+          <ul id="search-results" class="search-results" hidden></ul>
+        </section>
         <section id="stats" class="stats" hidden></section>
         <section id="layer-toggles" class="layer-toggles" hidden>
           <h2>View</h2>
@@ -96,6 +108,14 @@
         </svg>
       </button>
       <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+      <div
+        id="preview-badge"
+        class="preview-badge"
+        title="This import lives only in this tab. Open the desktop app to save."
+        hidden
+      >
+        Preview — not saved
+      </div>
       <div id="map-hint" class="map-hint" aria-hidden="true">Tap ☰ to import your Timeline</div>
     </div>
     <script type="module" src="/src/main.ts"></script>

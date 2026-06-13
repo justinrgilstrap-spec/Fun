@@ -28,7 +28,8 @@ function sanitizeFilename(name: string): string {
 function normalizeHome(home: unknown): HomePoint | undefined {
   if (!home || typeof home !== "object") return undefined;
   const h = home as Record<string, unknown>;
-  if (typeof h.lat !== "number" || typeof h.lon !== "number") return undefined;
+  if (typeof h.lat !== "number" || !Number.isFinite(h.lat)) return undefined;
+  if (typeof h.lon !== "number" || !Number.isFinite(h.lon)) return undefined;
   return { lat: h.lat, lon: h.lon, label: typeof h.label === "string" ? h.label : "" };
 }
 

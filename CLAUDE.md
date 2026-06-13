@@ -24,15 +24,24 @@ as a **native macOS desktop app** (built with Tauri, read/write).
   math — imported as the specific sub-packages used (`@turf/boolean-point-in-polygon`,
   `@turf/distance`, `@turf/helpers`), not the `@turf/turf` umbrella. Reference
   geometry lives in `public/data/*.geojson` (Natural Earth countries,
-  states/provinces, populated places) and is **large** — roughly 13 / 19 / 39 MB
-  for countries / cities / states (states ≈ 12 MB gzipped).
+  states/provinces, populated places), pre-shrunk by `scripts/trim-geojson.mjs`
+  (5-decimal coordinate precision + a property allowlist; **no geometric
+  simplification**, so polygons look identical at every zoom) — roughly
+  11 / 2 / 26 MB for countries / cities / states (states ≈ 8.5 MB gzipped).
+  The repo copies carry **only allowlisted properties**; if a new feature needs
+  another Natural Earth field, add it to the script's `KEEP` map and re-run the
+  script against a fresh NE download.
 - **Desktop shell:** [Tauri 2](https://tauri.app/) (Rust) in `src-tauri/`. The
   Rust side is intentionally thin — one command, `get_data_dir`.
 - **Persistence:** a single `visited.json` file (no database).
 - **PWA:** installable to the iOS/Android home screen via
   `public/manifest.webmanifest`, an `apple-touch-icon`, and `apple-mobile-web-app-*`
   meta tags in `index.html` (icons in `public/icons/`). The read-only web build is
-  what gets installed.
+  what gets installed. `public/sw.js` (registered by `main.ts` in production
+  browser builds only — never dev or Tauri) makes it work offline: precached app
+  shell, stale-while-revalidate for `visited.json` + reference GeoJSON (new data
+  shows on the *next* open), capped cache-first for CARTO tiles. Bump `VERSION`
+  in `sw.js` when its caching logic changes.
 
 ## Commands
 
@@ -81,6 +90,15 @@ The import pipeline is the heart of the app:
    keyed by layer id so the listeners survive the style rebuild a theme change
    triggers (don't move these into the per-layer `ensure*` functions, or each
    theme toggle re-registers a duplicate handler).
+5. **Search** (`src/ui/search.ts`) — the sidebar search box indexes the same
+   three reference datasets (built on first focus, which also triggers the lazy
+   states/cities downloads), so every result is a feature the map can render and
+   (on desktop) mark visited — deliberately no external geocoder. Selecting a
+   result switches to that layer (`activateLayer` in `main.ts`), flies to it
+   (`flyToFeature`), and opens the standard inspect popup (`openFeaturePopup`,
+   both in `layers.ts`). Polygon fly-tos anchor on the Natural Earth label point
+   and fall back to bbox center; antimeridian-spanning countries (Russia, Fiji,
+   USA) get the label-point path because their bbox is near-global.
 
 ### Reference data & ID schemes (`src/geo/datasets.ts`)
 
@@ -127,6 +145,9 @@ renders.
   match the existing style. State lives in module-level variables in `main.ts`.
 - **Browser vs. Tauri:** feature-detect with `isTauri()` (checks
   `__TAURI_INTERNALS__`). Any save/write path must guard against browser mode.
+  Browser imports are **session-only previews**: the pipeline runs in memory,
+  the map updates, and a "Preview — not saved" badge shows until reload —
+  nothing is persisted and the raw file is not archived.
 - **MapLibre resize quirk:** the map needs nudged `resize()` calls after sidebar
   transitions and via a `ResizeObserver` — flex children settle late. Don't remove
   these without testing the sidebar toggle.
@@ -138,33 +159,22 @@ renders.
 - The "states" layer is labeled **"Regions"** in the UI; the internal name remains
   `states` throughout the code and `visited.json`.
 - **Lazy-loaded datasets:** don't revert `layers.ts` to eagerly loading all three
-  GeoJSON — `states.geojson` is ~12 MB gzipped, so eager loading badly slows
+  GeoJSON — `states.geojson` is ~8.5 MB gzipped, so eager loading badly slows
   startup (especially on mobile). Add new heavy layers via the same `ensure*` +
   `setLayer` pattern.
 - **Turf imports:** import from specific `@turf/*` sub-packages, never the
   `@turf/turf` umbrella, to keep the installed dependency tree small.
 
-## Possible future work (not started)
+## Decided against
 
-- **Shrink the GeoJSON.** The `public/data/*.geojson` files are full-resolution
-  Natural Earth with far more coordinate precision than these zoom levels need. A
-  precision trim (~5 decimals) is near-lossless and would shrink `states.geojson`
-  (~39 MB) substantially; geometric simplification saves more but coarsens polygon
-  boundaries when zoomed in (city markers are points, so they're unaffected). Main
-  payoff: faster Regions/Cities loads.
-- **Place search.** A search box to fly-to a country/city — useful for navigation
-  and (in the Tauri build) as a hook for manually marking a place.
-- **Manual add/remove.** Click a place to toggle its visited state in write
-  (Tauri) mode, so spatial-join misses can be fixed without re-importing.
-- **Shareable snapshot.** Export the current map + stats as a PNG / "been to N
-  countries" card. All client-side, no backend.
-- **Empty-state onboarding.** First run (no `visited.json`) shows a blank world;
-  add a "drop your Timeline export here → how to get it" prompt linking to Google
-  Takeout.
-- **Import feedback toast.** Replace the console.log/alert with a "Added 4
-  countries, 11 cities" summary toast after an import.
-- **Time dimension (deferred).** Persisting per-visit timestamps would unlock a
-  year slider / "new this year." Deferred on purpose: the user's Google Timeline
-  data only starts ~Sept 2025, so lifetime "first visited" semantics would be
-  misleading. Revisit only if older history is backfilled; an honest version would
-  be a clearly-labeled "recent activity (since tracking began)" scope.
+- **Time dimension** (year slider / "new this year"). Scrapped June 2026, not
+  just deferred: the user's Google Timeline data only starts ~Sept 2025, so
+  lifetime "first visited" semantics would be misleading, and the per-visit
+  timestamp plumbing isn't worth carrying for a feature that may never ship.
+  Nothing irreversible is lost — raw imports are archived to `timeline-raw/`,
+  so timestamps can be re-derived by re-importing if older history is ever
+  backfilled. Don't re-propose without that backfill.
+- **Geometric simplification** of the reference GeoJSON (vertex removal).
+  Coordinate-precision trimming and property pruning are done (see
+  `scripts/trim-geojson.mjs`); simplification would coarsen polygon boundaries
+  when zoomed in, and the user wants city-level map quality kept intact.

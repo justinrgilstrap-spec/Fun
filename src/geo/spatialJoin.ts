@@ -121,7 +121,15 @@ export async function joinVisits(visits: Visit[]): Promise<JoinedResult> {
   const visitedStates = new Set<string>();
   const visitedCities = new Set<string>();
 
+  // Timeline exports contain the same places over and over (every trip home is
+  // a visit). Two visits within the same ~110 m bucket resolve to the same
+  // country/state/city, so join each bucket once — typically an order of
+  // magnitude fewer polygon scans on a real export.
+  const seen = new Set<string>();
   for (const v of visits) {
+    const key = `${v.lat.toFixed(3)},${v.lon.toFixed(3)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const country = findContaining(countryIdx, v.lat, v.lon);
     const state = findContaining(stateIdx, v.lat, v.lon);
     const city = findNearestCity(cities, v.lat, v.lon);

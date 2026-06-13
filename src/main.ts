@@ -4,10 +4,11 @@ import "./ui/styles.css";
 import maplibregl from "maplibre-gl";
 import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
-import { loadVisited, saveVisited, saveRawImport, mergeVisited } from "./store/visitedFile";
+import { loadVisited, saveVisited, saveRawImport, mergeVisited, isTauri } from "./store/visitedFile";
 import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
-import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint } from "./map/layers";
+import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint, flyToFeature, openFeaturePopup } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
+import { initSearch } from "./ui/search";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
@@ -104,6 +105,8 @@ const fileInput = document.getElementById("file-input") as HTMLInputElement;
 const statsEl = document.getElementById("stats") as HTMLElement;
 const togglesEl = document.getElementById("layer-toggles") as HTMLElement;
 const mapEl = document.getElementById("map") as HTMLElement;
+
+const previewBadge = document.getElementById("preview-badge") as HTMLElement;
 
 const map = createMap(mapEl, currentTheme);
 const themeToggleBtn = document.getElementById("theme-toggle") as HTMLButtonElement;
@@ -244,6 +247,14 @@ async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
 }
 
 async function bootstrap() {
+  // Offline support, web/PWA build only: sw.js caches the app shell and serves
+  // data stale-while-revalidate. Skipped in dev (would fight HMR) and in Tauri
+  // (files are already local). Registration is non-blocking and non-fatal.
+  if (import.meta.env.PROD && !isTauri() && "serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      .catch((err) => console.error("Service worker registration failed:", err));
+  }
   current = await loadVisited();
   await renderFromCurrent();
   initInteractions(map);
@@ -311,42 +322,89 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
     states: merged.states.length - current.states.length,
     cities: merged.cities.length - current.cities.length,
   };
-  current = await saveVisited(merged);
-  await saveRawImport(fileName, {
-    source: fileName,
-    importedAt: Date.now(),
-    visits: result.visits,
-    points: result.points,
-  });
-  await renderFromCurrent();
-  showToast(importSummary(added), { variant: "success" });
+  if (isTauri()) {
+    current = await saveVisited(merged);
+    await saveRawImport(fileName, {
+      source: fileName,
+      importedAt: Date.now(),
+      visits: result.visits,
+      points: result.points,
+    });
+    await renderFromCurrent();
+    showToast(importSummary(added), { variant: "success" });
+  } else {
+    // The browser build can't persist — render the import in-memory as a
+    // session-only preview (the Timeline export is created on the phone, so
+    // this is the one place it can be seen right away). A persistent badge
+    // marks the state as ephemeral; reload returns to the published data.
+    current = { ...merged, updatedAt: Date.now() };
+    previewBadge.hidden = false;
+    await renderFromCurrent();
+    showToast(`${importSummary(added)} Preview only — open the desktop app to save.`, {
+      variant: "success",
+      duration: 7000,
+    });
+  }
 });
 
 const layerInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="layer"]'));
-layerInputs.forEach((input) => {
-  input.addEventListener("change", async () => {
-    if (!input.checked) return;
-    const kind = input.value as LayerKind;
-    const label = input.closest("label");
-    // The dataset isn't on the map yet on first selection (or after a theme
-    // rebuild), so show a spinner and lock the toggles while it loads.
-    const needsLoad = !map.getSource(kind);
+
+// Switch the map to a view layer, keeping the radio toggles in sync. Driven by
+// the radios themselves and by search-result selection. Returns false when the
+// dataset failed to load (the caller shouldn't fly to a feature that isn't there).
+async function activateLayer(kind: LayerKind): Promise<boolean> {
+  const input = layerInputs.find((i) => i.value === kind);
+  if (input && !input.checked) input.checked = true;
+  const label = input?.closest("label");
+  // The dataset isn't on the map yet on first selection (or after a theme
+  // rebuild), so show a spinner and lock the toggles while it loads.
+  const needsLoad = !map.getSource(kind);
+  if (needsLoad) {
+    label?.classList.add("loading");
+    layerInputs.forEach((i) => (i.disabled = true));
+  }
+  try {
+    await setLayer(map, kind);
+    return true;
+  } catch (err) {
+    console.error(`Failed to load ${kind} layer:`, err);
+    showToast(`Could not load the ${kind} map data. Check your connection and try again.`, {
+      variant: "error",
+    });
+    return false;
+  } finally {
     if (needsLoad) {
-      label?.classList.add("loading");
-      layerInputs.forEach((i) => (i.disabled = true));
+      label?.classList.remove("loading");
+      layerInputs.forEach((i) => (i.disabled = false));
     }
-    try {
-      await setLayer(map, kind);
-    } catch (err) {
-      console.error(`Failed to load ${kind} layer:`, err);
-      alert(`Could not load the ${kind} map data. Check your connection and try again.`);
-    } finally {
-      if (needsLoad) {
-        label?.classList.remove("loading");
-        layerInputs.forEach((i) => (i.disabled = false));
-      }
-    }
+  }
+}
+
+layerInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (!input.checked) return;
+    void activateLayer(input.value as LayerKind);
   });
+});
+
+// Place search: results come from the same reference datasets the map renders,
+// so a selection switches to that result's view, flies to it, and opens the
+// standard inspect popup (with the write-mode "Mark visited" button on desktop).
+initSearch({
+  isVisited: (kind, id) => current[kind].includes(id),
+  onSelect: async (hit) => {
+    // On mobile the sidebar overlays the whole map — get it out of the way.
+    if (isMobile()) {
+      setSidebar("closed");
+      nudgeMapResize();
+    }
+    if (!mapReady) await onMapReady;
+    if (!(await activateLayer(hit.kind))) return;
+    flyToFeature(map, hit.kind, hit.feature);
+    // Opened immediately: the popup is anchored geographically, so it glides
+    // with the fly-to animation instead of popping in afterwards.
+    openFeaturePopup(map, hit.kind, hit.feature);
+  },
 });
 
 themeToggleBtn.addEventListener("click", async () => {

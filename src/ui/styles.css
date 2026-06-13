@@ -257,6 +257,135 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* Session-preview badge (browser imports only) — pinned over the map */
+.preview-badge {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Place search */
+.search {
+  position: relative;
+}
+
+.search input {
+  width: 100%;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.search input::placeholder {
+  color: var(--muted);
+}
+
+.search input:focus {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+
+/* Results overlay the sections below rather than pushing them down. */
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.search-results button {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.search-results button:hover,
+.search-results button.active {
+  background: var(--accent-soft);
+}
+
+.search-hit-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.search-hit-name {
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-hit-visited {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.search-hit-kind {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.search-hit-context {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-note {
+  padding: 9px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 /* Section headings */
 .stats h2,
 .layer-toggles h2 {

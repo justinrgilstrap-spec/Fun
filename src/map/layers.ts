@@ -158,18 +158,33 @@ const ENSURE: Record<LayerKind, (map: MlMap) => Promise<void>> = {
   cities: ensureCities,
 };
 
-// Push the latest visited sets into whatever sources are already on the map
-// (e.g. after an import adds new places). Datasets not yet loaded stay lazy.
-async function refreshLoadedData(map: MlMap): Promise<void> {
-  const countries = map.getSource("countries") as maplibregl.GeoJSONSource | undefined;
-  if (countries) countries.setData(await taggedCountries());
-  const states = map.getSource("states") as maplibregl.GeoJSONSource | undefined;
-  if (states) states.setData(await taggedStates());
-  const cities = map.getSource("cities") as maplibregl.GeoJSONSource | undefined;
-  if (cities) cities.setData(await taggedCities());
+const TAGGED: Record<LayerKind, () => Promise<FeatureCollection>> = {
+  countries: taggedCountries,
+  states: taggedStates,
+  cities: taggedCities,
+};
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
 }
 
 export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
+  // Work out which visited sets actually changed *before* adopting the new
+  // state, so only those sources get re-uploaded below. setData re-parses the
+  // whole GeoJSON (states is ~26 MB), so pushing unchanged data on every save
+  // made each "Mark visited" click visibly hitch once Regions had been opened.
+  const changed = (["countries", "states", "cities"] as const).filter(
+    (kind) =>
+      !setsEqual(
+        kind === "countries" ? state.visitedCountries : kind === "states" ? state.visitedStates : state.visitedCities,
+        kind === "countries" ? layerState.visitedCountries : kind === "states" ? layerState.visitedStates : layerState.visitedCities,
+      ),
+  );
+  // Sources created by the ensure* calls below are tagged with the new state
+  // already — only sources that predate this call can hold stale data.
+  const preexisting = new Set(changed.filter((kind) => map.getSource(kind)));
   layerState = state;
   // Countries supply the base outline shown in every view, so always load them.
   await ensureCountries(map);
@@ -177,8 +192,10 @@ export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
   if (currentLayer !== "countries") {
     await ENSURE[currentLayer](map);
   }
-  // Reflect updated visited sets in any already-loaded sources.
-  await refreshLoadedData(map);
+  for (const kind of preexisting) {
+    const src = map.getSource(kind) as maplibregl.GeoJSONSource | undefined;
+    if (src) src.setData(await TAGGED[kind]());
+  }
   applyLayer(map, currentLayer);
 }
 
@@ -501,5 +518,92 @@ export function initInteractions(map: MlMap): void {
   map.on("click", (e) => {
     if (e === handledClick) return;
     popup?.remove();
+  });
+}
+
+// --- Search fly-to + popup ----------------------------------------------------
+
+function geomBbox(geom: Feature["geometry"]): [number, number, number, number] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const visit = (c: unknown): void => {
+    if (typeof (c as number[])[0] === "number") {
+      const [x, y] = c as [number, number];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    } else {
+      for (const child of c as unknown[]) visit(child);
+    }
+  };
+  visit((geom as Polygon | MultiPolygon | Point).coordinates);
+  return [minX, minY, maxX, maxY];
+}
+
+// Geographic anchor for a feature: cities use their point; polygons use the
+// Natural Earth label point (kept by scripts/trim-geojson.mjs), which sits on
+// the mainland — better than a bbox center, which overseas islands can drag
+// into open ocean. Bbox center is the fallback.
+function anchorFor(kind: LayerKind, feature: Feature): [number, number] {
+  if (feature.geometry.type === "Point") {
+    return feature.geometry.coordinates as [number, number];
+  }
+  const props = feature.properties ?? {};
+  const lon = kind === "countries" ? props.LABEL_X : props.longitude;
+  const lat = kind === "countries" ? props.LABEL_Y : props.latitude;
+  if (typeof lon === "number" && typeof lat === "number") return [lon, lat];
+  const [minX, minY, maxX, maxY] = geomBbox(feature.geometry);
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
+}
+
+/** Fly the camera to a (search-result) feature: cities zoom to a point, polygons fit their bounds. */
+export function flyToFeature(map: MlMap, kind: LayerKind, feature: Feature): void {
+  if (feature.geometry.type === "Point") {
+    const [lon, lat] = feature.geometry.coordinates as [number, number];
+    // Zoom 8 comfortably shows the surrounding city dots; never zoom *out* a
+    // user who is already closer.
+    map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 8) });
+    return;
+  }
+  const [minX, minY, maxX, maxY] = geomBbox(feature.geometry);
+  // Antimeridian-spanning polygons (Russia, Fiji, the Aleutians) produce a
+  // near-global bbox; center on the label point at a wide zoom instead.
+  if (maxX - minX > 170) {
+    map.flyTo({ center: anchorFor(kind, feature), zoom: kind === "countries" ? 2.5 : 4 });
+    return;
+  }
+  map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 48, maxZoom: kind === "countries" ? 6 : 8 });
+}
+
+/**
+ * Open the standard inspect popup for a feature found by search (rather than by
+ * click): same content, same write-mode buttons. The raw dataset feature isn't
+ * tagged, so the visited flag is computed here from the current visited sets.
+ */
+export function openFeaturePopup(map: MlMap, kind: LayerKind, feature: Feature): void {
+  const visitedSet =
+    kind === "countries"
+      ? layerState.visitedCountries
+      : kind === "states"
+        ? layerState.visitedStates
+        : layerState.visitedCities;
+  const props = {
+    ...(feature.properties ?? {}),
+    visited: visitedSet.has(visitedId(kind, feature)) ? 1 : 0,
+  };
+  const tagged: Feature = { ...feature, properties: props };
+  const ll = anchorFor(kind, feature);
+  const canToggle = isTauri();
+  const home = isHomeFeature(kind, tagged);
+  const id = featureKey(kind, props);
+  popup?.remove();
+  popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "240px" })
+    .setLngLat(ll)
+    .setHTML(contentFor(kind, props, canToggle, home))
+    .addTo(map);
+  pinnedId = id;
+  if (canToggle) wirePopupActions(popup, kind, tagged, ll, home);
+  popup.on("close", () => {
+    if (pinnedId === id) pinnedId = null;
   });
 }
