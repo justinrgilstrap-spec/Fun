@@ -33,6 +33,7 @@ export interface VisitedFile {
   countries: string[];
   states: string[];
   cities: string[];
+  parks: string[];
   /** Optional home pin (additive, backward-compatible). */
   home?: HomePoint;
   updatedAt: number;
@@ -45,4 +46,4 @@ export interface RawTimelineImport {
   points: RawPoint[];
 }
 
-export type LayerKind = "countries" | "states" | "cities";
+export type LayerKind = "countries" | "states" | "cities" | "parks";

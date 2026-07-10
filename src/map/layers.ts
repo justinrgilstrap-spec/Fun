@@ -1,6 +1,6 @@
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from "geojson";
-import { loadCountries, loadStates, loadCities, countryIso, stateIso, cityId } from "../geo/datasets";
+import { loadCountries, loadStates, loadCities, loadParks, countryIso, stateIso, cityId, parkId } from "../geo/datasets";
 import { isTauri } from "../store/visitedFile";
 import type { LayerKind, HomePoint } from "../types";
 
@@ -8,7 +8,17 @@ interface LayerState {
   visitedCountries: Set<string>;
   visitedStates: Set<string>;
   visitedCities: Set<string>;
+  visitedParks: Set<string>;
 }
+
+// Maps a LayerKind to its LayerState key, so code that has to loop over "every
+// kind" (initLayers below) doesn't need a hand-written ternary per kind.
+const KIND_SET: Record<LayerKind, keyof LayerState> = {
+  countries: "visitedCountries",
+  states: "visitedStates",
+  cities: "visitedCities",
+  parks: "visitedParks",
+};
 
 let currentLayer: LayerKind = "countries";
 
@@ -18,6 +28,7 @@ let layerState: LayerState = {
   visitedCountries: new Set(),
   visitedStates: new Set(),
   visitedCities: new Set(),
+  visitedParks: new Set(),
 };
 
 const VISITED_FILL = "#CC6B49";
@@ -64,6 +75,10 @@ async function taggedCities(): Promise<FeatureCollection<Point>> {
   const cities = await loadCities();
   return { type: "FeatureCollection", features: tagVisited(cities.features, layerState.visitedCities, cityId) };
 }
+async function taggedParks(): Promise<FeatureCollection<Polygon | MultiPolygon>> {
+  const parks = await loadParks();
+  return { type: "FeatureCollection", features: tagVisited(parks.features, layerState.visitedParks, parkId) };
+}
 
 // Add a dataset's source + layers if they aren't on the map yet; no-op when they
 // already exist, so switching back to a loaded layer is instant. The first call
@@ -108,6 +123,23 @@ async function ensureStates(map: MlMap): Promise<void> {
     type: "line",
     source: "states",
     paint: { "line-color": visitedOutlineExpr, "line-width": 0.4, "line-opacity": 0.6 },
+  }, before);
+}
+async function ensureParks(map: MlMap): Promise<void> {
+  if (map.getSource("parks")) return;
+  map.addSource("parks", { type: "geojson", data: await taggedParks() });
+  const before = labelBeforeId(map);
+  map.addLayer({
+    id: "parks-fill",
+    type: "fill",
+    source: "parks",
+    paint: { "fill-color": visitedFillExpr, "fill-opacity": visitedOpacityExpr },
+  }, before);
+  map.addLayer({
+    id: "parks-line",
+    type: "line",
+    source: "parks",
+    paint: { "line-color": visitedOutlineExpr, "line-width": 0.8, "line-opacity": 0.85 },
   }, before);
 }
 async function ensureCities(map: MlMap): Promise<void> {
@@ -156,12 +188,14 @@ const ENSURE: Record<LayerKind, (map: MlMap) => Promise<void>> = {
   countries: ensureCountries,
   states: ensureStates,
   cities: ensureCities,
+  parks: ensureParks,
 };
 
 const TAGGED: Record<LayerKind, () => Promise<FeatureCollection>> = {
   countries: taggedCountries,
   states: taggedStates,
   cities: taggedCities,
+  parks: taggedParks,
 };
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
@@ -175,12 +209,8 @@ export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
   // state, so only those sources get re-uploaded below. setData re-parses the
   // whole GeoJSON (states is ~26 MB), so pushing unchanged data on every save
   // made each "Mark visited" click visibly hitch once Regions had been opened.
-  const changed = (["countries", "states", "cities"] as const).filter(
-    (kind) =>
-      !setsEqual(
-        kind === "countries" ? state.visitedCountries : kind === "states" ? state.visitedStates : state.visitedCities,
-        kind === "countries" ? layerState.visitedCountries : kind === "states" ? layerState.visitedStates : layerState.visitedCities,
-      ),
+  const changed = (Object.keys(KIND_SET) as LayerKind[]).filter(
+    (kind) => !setsEqual(state[KIND_SET[kind]], layerState[KIND_SET[kind]]),
   );
   // Sources created by the ensure* calls below are tagged with the new state
   // already — only sources that predate this call can hold stale data.
@@ -223,12 +253,15 @@ const ALL_LAYER_IDS = [
   "states-fill",
   "states-line",
   "cities-circle",
+  "parks-fill",
+  "parks-line",
 ];
 
 const VISIBLE_BY_LAYER: Record<LayerKind, string[]> = {
   countries: ["countries-fill", "countries-line"],
   states: ["countries-line", "states-fill", "states-line"],
   cities: ["countries-line", "cities-circle"],
+  parks: ["countries-line", "parks-fill", "parks-line"],
 };
 
 export function applyLayer(map: MlMap, kind: LayerKind): void {
@@ -294,6 +327,9 @@ function featureKey(kind: LayerKind, props: Record<string, unknown> | null): str
   if (kind === "states") {
     return `states:${joinParts([str(props, "name"), str(props, "admin")])}`;
   }
+  if (kind === "parks") {
+    return `parks:${str(props, "UNIT_NAME")}`;
+  }
   return `cities:${joinParts([str(props, "NAMEASCII") || str(props, "NAME"), str(props, "ADM1NAME"), str(props, "ADM0NAME")])}`;
 }
 
@@ -319,6 +355,15 @@ function contentFor(
     return popupHTML(
       str(props, "name") || "Unknown",
       joinParts([str(props, "type_en"), str(props, "admin")]),
+      visited,
+      canToggle,
+      isHome,
+    );
+  }
+  if (kind === "parks") {
+    return popupHTML(
+      str(props, "UNIT_NAME") || "Unknown",
+      str(props, "STATE"),
       visited,
       canToggle,
       isHome,
@@ -354,6 +399,7 @@ function isHomeFeature(kind: LayerKind, feature: Feature): boolean {
 function visitedId(kind: LayerKind, feature: Feature): string {
   if (kind === "countries") return countryIso(feature);
   if (kind === "states") return stateIso(feature);
+  if (kind === "parks") return parkId(feature);
   return cityId(feature);
 }
 
@@ -433,6 +479,7 @@ const CLICK_LAYERS: Array<[string, LayerKind]> = [
   ["countries-fill", "countries"],
   ["states-fill", "states"],
   ["cities-circle", "cities"],
+  ["parks-fill", "parks"],
 ];
 
 export function initInteractions(map: MlMap): void {
@@ -492,6 +539,7 @@ export function initInteractions(map: MlMap): void {
   const HOVER_LAYERS: Array<[string, string]> = [
     ["countries-fill", "countries"],
     ["states-fill", "states"],
+    ["parks-fill", "parks"],
   ];
   let hovered: { source: string; id: string | number } | null = null;
   const clearHover = () => {
@@ -549,8 +597,8 @@ function anchorFor(kind: LayerKind, feature: Feature): [number, number] {
     return feature.geometry.coordinates as [number, number];
   }
   const props = feature.properties ?? {};
-  const lon = kind === "countries" ? props.LABEL_X : props.longitude;
-  const lat = kind === "countries" ? props.LABEL_Y : props.latitude;
+  const lon = kind === "countries" || kind === "parks" ? props.LABEL_X : props.longitude;
+  const lat = kind === "countries" || kind === "parks" ? props.LABEL_Y : props.latitude;
   if (typeof lon === "number" && typeof lat === "number") return [lon, lat];
   const [minX, minY, maxX, maxY] = geomBbox(feature.geometry);
   return [(minX + maxX) / 2, (minY + maxY) / 2];
@@ -598,12 +646,7 @@ export function flyToFeature(map: MlMap, kind: LayerKind, feature: Feature): voi
  * tagged, so the visited flag is computed here from the current visited sets.
  */
 export function openFeaturePopup(map: MlMap, kind: LayerKind, feature: Feature): void {
-  const visitedSet =
-    kind === "countries"
-      ? layerState.visitedCountries
-      : kind === "states"
-        ? layerState.visitedStates
-        : layerState.visitedCities;
+  const visitedSet = layerState[KIND_SET[kind]];
   const props = {
     ...(feature.properties ?? {}),
     visited: visitedSet.has(visitedId(kind, feature)) ? 1 : 0,

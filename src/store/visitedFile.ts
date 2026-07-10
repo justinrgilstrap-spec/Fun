@@ -4,7 +4,7 @@ import type { HomePoint, RawTimelineImport, VisitedFile } from "../types";
 
 const VISITED_URL = `${import.meta.env.BASE_URL}data/visited.json`;
 
-const EMPTY: VisitedFile = { countries: [], states: [], cities: [], updatedAt: 0 };
+const EMPTY: VisitedFile = { countries: [], states: [], cities: [], parks: [], updatedAt: 0 };
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -39,6 +39,9 @@ function normalizeVisitedShape(data: Partial<VisitedFile>): VisitedFile {
     countries: Array.isArray(data.countries) ? data.countries : [],
     states: Array.isArray(data.states) ? data.states : [],
     cities: Array.isArray(data.cities) ? data.cities : [],
+    // Additive, backward-compatible: older visited.json files predate the
+    // Parks layer and simply have no `parks` key.
+    parks: Array.isArray(data.parks) ? data.parks : [],
     ...(home ? { home } : {}),
     updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : 0,
   };
@@ -77,6 +80,7 @@ export async function saveVisited(merged: Omit<VisitedFile, "updatedAt">): Promi
     countries: Array.from(new Set(merged.countries)).sort(),
     states: Array.from(new Set(merged.states)).sort(),
     cities: Array.from(new Set(merged.cities)).sort(),
+    parks: Array.from(new Set(merged.parks)).sort(),
     ...(merged.home ? { home: merged.home } : {}),
     updatedAt: Date.now(),
   };
@@ -98,13 +102,19 @@ export async function saveRawImport(filename: string, data: RawTimelineImport): 
 
 export function mergeVisited(
   base: VisitedFile,
-  add: { countries?: Iterable<string>; states?: Iterable<string>; cities?: Iterable<string> },
+  add: {
+    countries?: Iterable<string>;
+    states?: Iterable<string>;
+    cities?: Iterable<string>;
+    parks?: Iterable<string>;
+  },
 ): Omit<VisitedFile, "updatedAt"> {
   // Carry the existing home through — an import adds places, it must never wipe it.
   return {
     countries: Array.from(new Set([...base.countries, ...(add.countries ?? [])])).sort(),
     states: Array.from(new Set([...base.states, ...(add.states ?? [])])).sort(),
     cities: Array.from(new Set([...base.cities, ...(add.cities ?? [])])).sort(),
+    parks: Array.from(new Set([...base.parks, ...(add.parks ?? [])])).sort(),
     ...(base.home ? { home: base.home } : {}),
   };
 }

@@ -135,7 +135,7 @@ const onMapReady = new Promise<void>((resolve) => {
 // settle at the wrong dimensions before MapLibre's internal observer fires.
 new ResizeObserver(() => map.resize()).observe(mapEl);
 
-let current: VisitedFile = { countries: [], states: [], cities: [], updatedAt: 0 };
+let current: VisitedFile = { countries: [], states: [], cities: [], parks: [], updatedAt: 0 };
 
 // US states use ISO 3166-2 "US-XX" codes; DC isn't a state, so it's excluded.
 // Returns null when none are visited, which hides the U.S. progress row.
@@ -152,6 +152,7 @@ function statsFrom(file: VisitedFile) {
     countries: countCountries(file.countries),
     states: file.states.length,
     cities: file.cities.length,
+    parks: file.parks.length,
     continents: countContinents(file.countries),
     usStates: countUsStates(file.states),
     continentBreakdown: countsByContinent(file.countries),
@@ -164,13 +165,14 @@ async function renderFromCurrent() {
   // Toggle the empty-state onboarding up front (before the map finishes loading)
   // so first-run guidance shows immediately; hidden as soon as any data exists.
   const hasData =
-    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0;
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0;
   appEl.setAttribute("data-empty", hasData ? "false" : "true");
   if (!mapReady) await onMapReady;
   await initLayers(map, {
     visitedCountries: new Set(current.countries),
     visitedStates: new Set(current.states),
     visitedCities: new Set(current.cities),
+    visitedParks: new Set(current.parks),
   });
   if (hasData) {
     renderStats(statsEl, statsFrom(current));
@@ -220,6 +222,7 @@ async function setHome(lng: number, lat: number): Promise<void> {
     countries: current.countries,
     states: current.states,
     cities: current.cities,
+    parks: current.parks,
     home,
   });
   await renderFromCurrent();
@@ -240,6 +243,7 @@ async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
     countries: kind === "countries" ? [...set] : current.countries,
     states: kind === "states" ? [...set] : current.states,
     cities: kind === "cities" ? [...set] : current.cities,
+    parks: kind === "parks" ? [...set] : current.parks,
     home: current.home,
   });
   await renderFromCurrent();
@@ -275,18 +279,19 @@ async function prefetchCityStats() {
     return;
   }
   const hasData =
-    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0;
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0;
   if (hasData) renderStats(statsEl, statsFrom(current));
 }
 
 // Human-readable summary of how many *new* places an import added, e.g.
 // "Added 4 countries and 11 cities." Returns an "up to date" line when the file
 // only contained places already on the map.
-function importSummary(added: { countries: number; states: number; cities: number }): string {
+function importSummary(added: { countries: number; states: number; cities: number; parks: number }): string {
   const parts: string[] = [];
   if (added.countries) parts.push(countLabel(added.countries, "country", "countries"));
   if (added.states) parts.push(countLabel(added.states, "region", "regions"));
   if (added.cities) parts.push(countLabel(added.cities, "city", "cities"));
+  if (added.parks) parts.push(countLabel(added.parks, "national park", "national parks"));
   if (parts.length === 0) return "Already up to date — no new places found.";
   return `Added ${joinClauses(parts)}.`;
 }
@@ -315,12 +320,14 @@ setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
     countries: joined.visitedCountries,
     states: joined.visitedStates,
     cities: joined.visitedCities,
+    parks: joined.visitedParks,
   });
   // Deltas vs. the previous data — computed before `current` is overwritten.
   const added = {
     countries: merged.countries.length - current.countries.length,
     states: merged.states.length - current.states.length,
     cities: merged.cities.length - current.cities.length,
+    parks: merged.parks.length - current.parks.length,
   };
   if (isTauri()) {
     current = await saveVisited(merged);

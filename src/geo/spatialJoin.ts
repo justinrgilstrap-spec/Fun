@@ -7,10 +7,12 @@ import {
   loadCountries,
   loadStates,
   loadCities,
+  loadParks,
   countryIso,
   stateIso,
   cityId,
   cityName,
+  parkId,
 } from "./datasets";
 import type { HomePoint } from "../types";
 
@@ -106,20 +108,26 @@ export interface JoinedResult {
   visitedCountries: Set<string>;
   visitedStates: Set<string>;
   visitedCities: Set<string>;
+  visitedParks: Set<string>;
 }
 
 export async function joinVisits(visits: Visit[]): Promise<JoinedResult> {
-  const [countries, states, cities] = await Promise.all([
+  const [countries, states, cities, parks] = await Promise.all([
     loadCountries(),
     loadStates(),
     loadCities(),
+    loadParks(),
   ]);
   const countryIdx = buildIndex(countries);
   const stateIdx = buildIndex(states);
+  // Only 63 features — no bbox pre-filter benefit worth a separate code path,
+  // but buildIndex/findContaining already do one for free.
+  const parkIdx = buildIndex(parks);
 
   const visitedCountries = new Set<string>();
   const visitedStates = new Set<string>();
   const visitedCities = new Set<string>();
+  const visitedParks = new Set<string>();
 
   // Timeline exports contain the same places over and over (every trip home is
   // a visit). Two visits within the same ~110 m bucket resolve to the same
@@ -133,11 +141,13 @@ export async function joinVisits(visits: Visit[]): Promise<JoinedResult> {
     const country = findContaining(countryIdx, v.lat, v.lon);
     const state = findContaining(stateIdx, v.lat, v.lon);
     const city = findNearestCity(cities, v.lat, v.lon);
+    const park = findContaining(parkIdx, v.lat, v.lon);
 
     if (country) visitedCountries.add(countryIso(country));
     if (state) visitedStates.add(stateIso(state));
     if (city) visitedCities.add(cityId(city));
+    if (park) visitedParks.add(parkId(park));
   }
 
-  return { visitedCountries, visitedStates, visitedCities };
+  return { visitedCountries, visitedStates, visitedCities, visitedParks };
 }

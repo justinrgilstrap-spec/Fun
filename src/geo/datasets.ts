@@ -6,10 +6,12 @@ import type { HomePoint } from "../types";
 const COUNTRIES_URL = `${import.meta.env.BASE_URL}data/countries.geojson`;
 const STATES_URL = `${import.meta.env.BASE_URL}data/states.geojson`;
 const CITIES_URL = `${import.meta.env.BASE_URL}data/cities.geojson`;
+const PARKS_URL = `${import.meta.env.BASE_URL}data/parks.geojson`;
 
 let countries: FeatureCollection<Polygon | MultiPolygon> | null = null;
 let states: FeatureCollection<Polygon | MultiPolygon> | null = null;
 let cities: FeatureCollection<Point> | null = null;
+let parks: FeatureCollection<Polygon | MultiPolygon> | null = null;
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -37,6 +39,18 @@ export async function loadCities() {
     cities = await fetchJson<FeatureCollection<Point>>(CITIES_URL);
   }
   return cities;
+}
+
+// The 63 official U.S. National Parks, boundaries from the NPS Land Resources
+// Division (see scripts/trim-geojson.mjs for provenance). A small, static
+// dataset — no lazy-load benefit, but treated the same as the others for
+// consistency and because ensureParks()/setLayer() already expect an
+// async loader per layer kind.
+export async function loadParks() {
+  if (!parks) {
+    parks = await fetchJson<FeatureCollection<Polygon | MultiPolygon>>(PARKS_URL);
+  }
+  return parks;
 }
 
 // Dependent territories that Natural Earth assigns their own ISO_A3 code but
@@ -236,4 +250,16 @@ export function cityId(feature: Feature): string {
   const name = (props.NAMEASCII as string) ?? (props.NAME as string) ?? "?";
   const adm1 = (props.ADM1NAME as string) ?? "";
   return `${a3}|${adm1}|${name}`;
+}
+
+// The NPS 4-letter unit code (e.g. "YELL") — stable, unique, and already the
+// primary key the boundary dataset ships with, so no fallback chain needed.
+export function parkId(feature: Feature): string {
+  const props = feature.properties ?? {};
+  return (props.UNIT_CODE as string) ?? "?";
+}
+
+export function parkName(feature: Feature): string {
+  const props = feature.properties ?? {};
+  return (props.UNIT_NAME as string) ?? "?";
 }
