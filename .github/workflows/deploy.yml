@@ -27,7 +27,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npx vite build --base=/fun/
+      - run: npx vite build --base=/Fun/
 
       - uses: actions/configure-pages@v5
 
