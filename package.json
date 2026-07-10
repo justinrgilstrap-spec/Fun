@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri:dev": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
-    "tauri:build": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
+    "tauri:dev": "node scripts/tauri-cli.mjs dev",
+    "tauri:build": "node scripts/tauri-cli.mjs build"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.2.9",
