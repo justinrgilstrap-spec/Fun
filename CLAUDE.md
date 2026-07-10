@@ -111,10 +111,45 @@ Render, above). Each feature is reduced to a stable ID used as the "visited" key
 - **State/region:** `iso_3166_2`, falling back to `adm1_code` or
   `admin|name`.
 - **City:** composite `ADM0_A3|ADM1NAME|NAMEASCII`.
+- **National Park:** `UNIT_CODE`, the NPS 4-letter unit code (e.g. `YELL`) — no
+  fallback needed, it's the boundary dataset's own stable primary key.
 
 `countCountries()` collapses **dependent territories onto their parent**
 (via the `TERRITORY_PARENT` map) so the headline "Countries" stat counts sovereign
 nations, not territories — but the territory polygons still render as visited.
+
+### Parks layer (`public/data/parks.geojson`)
+
+A fourth view alongside Countries/Regions/Cities: the 63 units the NPS
+designates "National Park" (Congaree counts, Gateway National Recreation Area
+doesn't — see the UNIT_TYPE filter this was built from). Unlike the other three
+datasets it isn't Natural Earth or lazy-loaded — it's a small (63-feature),
+always-loaded dataset from the NPS Land Resources Division's official boundary
+polygons. Visited state is set two ways, same as every other layer:
+
+- **Auto-detect:** `joinVisits()` in `src/geo/spatialJoin.ts` runs the same
+  bbox-prefiltered `booleanPointInPolygon` join used for countries/states
+  against the park polygons.
+- **Manual override:** the same click-to-inspect popup + "Mark/Unmark visited"
+  button every layer already has (desktop write-mode) works for parks with no
+  extra code — `visitedId()`/`featureKey()`/`contentFor()` in `src/map/layers.ts`
+  just gained a `"parks"` case each. Search (`src/ui/search.ts`) indexes parks
+  too, so a tiny park (Hot Springs, Congaree) is one search away from a
+  "Mark visited" click even if its on-map fill is a hard target to hit at low zoom.
+
+Regenerating `parks.geojson`: fetch the official NPS boundary service
+(`https://services1.arcgis.com/fBc8EJBxQRMcHlei/ArcGIS/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer`,
+see `irma.nps.gov/App/Reference/Profile/2196725` for the dataset profile),
+filter features to `UNIT_TYPE == "National Park"`, merge multi-polygon records
+per unit into one Feature (see `parks.geojson`'s existing shape), attach a
+centroid as `LABEL_X`/`LABEL_Y`, then run `scripts/trim-geojson.mjs`. Current
+file size is ~11.8 MB after trimming — several of the 63 (Wrangell-St. Elias,
+Glacier Bay, Channel Islands) are large, highly detailed coastal/cadastral
+polygons, meaningfully bigger per-feature than a Natural Earth state. Unlike
+countries/states, geometric simplification hasn't been ruled out here (see
+"Decided against" — that decision was about Natural Earth data specifically);
+worth revisiting with `mapshaper` if the bundle size becomes a problem, since
+this is cadastral-grade precision doing a basemap's job.
 
 ## Storage locations
 

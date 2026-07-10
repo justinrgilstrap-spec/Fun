@@ -1,5 +1,5 @@
 import type { Feature } from "geojson";
-import { loadCountries, loadStates, loadCities, countryIso, stateIso, cityId } from "../geo/datasets";
+import { loadCountries, loadStates, loadCities, loadParks, countryIso, stateIso, cityId, parkId } from "../geo/datasets";
 import type { LayerKind } from "../types";
 
 /**
@@ -30,8 +30,8 @@ export interface SearchOptions {
 }
 
 const MAX_RESULTS = 8;
-const KIND_RANK: Record<LayerKind, number> = { countries: 0, states: 1, cities: 2 };
-const KIND_LABEL: Record<LayerKind, string> = { countries: "Country", states: "Region", cities: "City" };
+const KIND_RANK: Record<LayerKind, number> = { countries: 0, states: 1, cities: 2, parks: 3 };
+const KIND_LABEL: Record<LayerKind, string> = { countries: "Country", states: "Region", cities: "City", parks: "National Park" };
 
 // Case- and diacritic-insensitive matching: "sao paulo" finds São Paulo.
 function norm(s: string): string {
@@ -46,7 +46,12 @@ function str(props: Record<string, unknown> | null | undefined, key: string): st
 // Flatten the (cached) datasets into one searchable list. Runs once, on first
 // use; the awaited loads are what trigger the lazy states/cities downloads.
 async function buildIndex(): Promise<Entry[]> {
-  const [countries, states, cities] = await Promise.all([loadCountries(), loadStates(), loadCities()]);
+  const [countries, states, cities, parks] = await Promise.all([
+    loadCountries(),
+    loadStates(),
+    loadCities(),
+    loadParks(),
+  ]);
   const out: Entry[] = [];
   for (const f of countries.features) {
     const p = f.properties;
@@ -91,6 +96,20 @@ async function buildIndex(): Promise<Entry[]> {
       feature: f,
       norm: norm(`${name}|${str(p, "NAMEASCII")}`),
       pop: typeof p?.POP_MAX === "number" ? p.POP_MAX : 0,
+    });
+  }
+  for (const f of parks.features) {
+    const p = f.properties;
+    const name = str(p, "UNIT_NAME");
+    if (!name) continue;
+    out.push({
+      kind: "parks",
+      id: parkId(f),
+      name,
+      context: str(p, "STATE"),
+      feature: f,
+      norm: norm(name),
+      pop: 0,
     });
   }
   return out;

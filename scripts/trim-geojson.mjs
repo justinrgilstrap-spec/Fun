@@ -16,6 +16,14 @@
 //    to the allowlist here and re-run against a fresh Natural Earth download
 //    (pruning is destructive to the repo copy; the source data is public).
 //
+// parks.geojson isn't Natural Earth: it's the official boundary polygons from
+// the NPS Land Resources Division (https://irma.nps.gov/App/Reference/Profile/2196725),
+// filtered to the 63 units NPS designates "National Park" and combined
+// multi-polygon records into one Feature per park, the same way countries/states
+// already work. LABEL_X/LABEL_Y come from the companion NPS boundary-centroids
+// file, not a bbox center, so search fly-to lands on the same anchor point NPS
+// itself uses.
+//
 // Usage: node scripts/trim-geojson.mjs
 // Idempotent — safe to re-run after replacing a dataset.
 
@@ -42,6 +50,11 @@ const KEEP = {
     "ADM0_A3", "ADM1NAME", "NAMEASCII", // cityId composite
     "NAME", "ADM0NAME", // popups + search context
     "POP_MAX", // search result ranking
+  ],
+  "parks.geojson": [
+    "UNIT_CODE", // parkId — the NPS 4-letter unit code, stable and unique
+    "UNIT_NAME", "STATE", // popups + search context
+    "LABEL_X", "LABEL_Y", // label point (NPS boundary-dataset centroid): search fly-to anchor
   ],
 };
 const FILES = Object.keys(KEEP);

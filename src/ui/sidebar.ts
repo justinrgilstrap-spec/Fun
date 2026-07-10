@@ -4,6 +4,8 @@ interface Stats {
   countries: number;
   states: number;
   cities: number;
+  /** National Parks visited (0–63). */
+  parks: number;
   /** Distinct continents touched (0–7). */
   continents: number;
   /** US states visited, or null when none — hides the US row for non-US users. */
@@ -55,6 +57,7 @@ function continentBreakdown(items: ContinentCount[]): string {
 const WORLD_COUNTRIES = 195; // UN members + observer states, the common traveler's total
 const CONTINENTS = 7;
 const US_STATES = 50;
+const NATIONAL_PARKS = 63; // congressionally-designated "National Park" units, matching public/data/parks.geojson
 
 function progressRow(label: string, value: number, total: number): string {
   const pct = total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
@@ -103,6 +106,7 @@ function furthestSection(f: Furthest | null): string {
 export function renderStats(el: HTMLElement, stats: Stats): void {
   el.hidden = false;
   const usRow = stats.usStates !== null ? progressRow("U.S. states", stats.usStates, US_STATES) : "";
+  const parksRow = stats.parks > 0 ? progressRow("National Parks", stats.parks, NATIONAL_PARKS) : "";
   el.innerHTML = `
     <h2>Your footprint</h2>
     <div class="stat-grid">
@@ -124,6 +128,7 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
       ${progressRow("Countries", stats.countries, WORLD_COUNTRIES)}
       ${progressRow("Continents", stats.continents, CONTINENTS)}
       ${usRow}
+      ${parksRow}
     </div>
     ${extremesSection(stats.extremes)}
     ${furthestSection(stats.furthest)}
