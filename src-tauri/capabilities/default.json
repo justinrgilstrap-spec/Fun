@@ -12,8 +12,8 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$HOME/Documents/Claude/Footprint/public/data" },
-        { "path": "$HOME/Documents/Claude/Footprint/public/data/**" }
+        { "path": "$DOCUMENT/Claude/Footprint/public/data" },
+        { "path": "$DOCUMENT/Claude/Footprint/public/data/**" }
       ]
     }
   ]
