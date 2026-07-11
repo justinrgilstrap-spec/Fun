@@ -19,7 +19,14 @@ export function setupDropzone(
       await onImport(result, file.name);
     } catch (err) {
       console.error("Failed to import:", err);
-      showToast(`Failed to import ${file.name}: ${(err as Error).message}`, {
+      // Tauri's invoke() rejects with the raw error value from the Rust/plugin
+      // side (often a plain string, e.g. a denied fs-scope permission) rather
+      // than an Error instance, so `(err as Error).message` can silently be
+      // undefined. Fall back to the value itself (or a generic message) so the
+      // toast always shows something readable.
+      const message =
+        err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+      showToast(`Failed to import ${file.name}: ${message}`, {
         variant: "error",
         duration: 7000,
       });
