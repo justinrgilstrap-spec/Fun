@@ -9,6 +9,7 @@ import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjectio
 import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint, flyToFeature, openFeaturePopup } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { initSearch } from "./ui/search";
+import { initChecklist } from "./ui/checklist";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
@@ -183,6 +184,9 @@ async function renderFromCurrent() {
   // Keep the layer module's home state current so popups can show a "Your home"
   // badge on the home city instead of a redundant "Set as home" button.
   setHomePoint(current.home ?? null);
+  // No-op if the "Browse & mark" modal isn't open; keeps its checkboxes/counts
+  // in sync if it's left open across an import or a map-popup toggle.
+  checklist.refresh();
 }
 
 // A house marker at the home pin. Markers live in the map's DOM container, not the
@@ -412,6 +416,17 @@ initSearch({
     // with the fly-to animation instead of popping in afterwards.
     openFeaturePopup(map, hit.kind, hit.feature);
   },
+});
+
+// "Browse & mark visited" list view: Countries and National Parks in full,
+// plus North American Regions (Regions worldwide and Cities are too large
+// for a usable checklist — 4,596 and 7,342 entries respectively — and stay
+// map-click + search only). Every checkbox is just another door into the
+// same toggleVisited() persistence the map popups use.
+const checklist = initChecklist({
+  isVisited: (kind, id) => current[kind].includes(id),
+  onToggle: toggleVisited,
+  canToggle: isTauri,
 });
 
 themeToggleBtn.addEventListener("click", async () => {

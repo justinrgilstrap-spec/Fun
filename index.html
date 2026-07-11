@@ -32,6 +32,12 @@
                 <line x1="12" y1="2" x2="12" y2="15" />
               </svg>
             </button>
+            <button id="checklist-open" class="icon-btn" type="button" aria-label="Browse and mark visited" title="Browse &amp; mark visited (list view)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 6h11M9 12h11M9 18h11" />
+                <path d="M4 6h.01M4 12h.01M4 18h.01" />
+              </svg>
+            </button>
             <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
               <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="4" />
@@ -118,6 +124,35 @@
         Preview — not saved
       </div>
       <div id="map-hint" class="map-hint" aria-hidden="true">Tap ☰ to import your Timeline</div>
+      <div id="checklist-modal" class="checklist-modal" hidden>
+        <div id="checklist-backdrop" class="checklist-backdrop"></div>
+        <div class="checklist-panel" role="dialog" aria-modal="true" aria-label="Browse and mark visited places">
+          <header class="checklist-header">
+            <h2>Browse &amp; mark visited</h2>
+            <button id="checklist-close" class="icon-btn" type="button" aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </header>
+          <div class="checklist-tabs" role="tablist">
+            <button type="button" class="checklist-tab active" data-kind="countries" role="tab"></button>
+            <button type="button" class="checklist-tab" data-kind="parks" role="tab"></button>
+            <button type="button" class="checklist-tab" data-kind="naRegions" role="tab"></button>
+          </div>
+          <input
+            id="checklist-search"
+            type="search"
+            placeholder="Filter this list…"
+            autocomplete="off"
+            spellcheck="false"
+            class="checklist-search"
+          />
+          <div id="checklist-count" class="checklist-count"></div>
+          <ul id="checklist-items" class="checklist-items"></ul>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
