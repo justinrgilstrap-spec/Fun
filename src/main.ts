@@ -202,6 +202,7 @@ async function renderFromCurrent() {
     snapshotBtn.hidden = false;
   }
   updateHomeMarker();
+  updateSpecialMarkers(statsFrom(current));
   // Keep the layer module's home state current so popups can show a "Your home"
   // badge on the home city instead of a redundant "Set as home" button.
   setHomePoint(current.home ?? null);
@@ -232,6 +233,60 @@ function updateHomeMarker() {
     homeMarker.setLngLat([lon, lat]);
   }
   homeMarker.getElement().title = `Home: ${label}`;
+}
+
+// Fun on-map markers for the sidebar's distance stats — compass extremes,
+// the Top 5 furthest-from-home cities, and the furthest-apart pair. Per
+// Justin: these belong on the map itself, not as icons in the sidebar text.
+// Rebuilt from scratch on every renderFromCurrent() (cheap: at most 4 + 5 + 2
+// = 11 markers). Cities that qualify for more than one category (e.g. the
+// northernmost city is also the #1 furthest-from-home) get ONE marker with
+// all of their icons combined, keyed by rounded coordinates, rather than
+// stacking separate markers exactly on top of each other.
+let specialMarkers: maplibregl.Marker[] = [];
+const RANK_ICON = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+
+function updateSpecialMarkers(stats: ReturnType<typeof statsFrom>): void {
+  specialMarkers.forEach((m) => m.remove());
+  specialMarkers = [];
+
+  const byCoord = new Map<string, { lat: number; lon: number; icons: string[]; titles: string[] }>();
+  const add = (lat: number, lon: number, icon: string, title: string) => {
+    const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+    let entry = byCoord.get(key);
+    if (!entry) {
+      entry = { lat, lon, icons: [], titles: [] };
+      byCoord.set(key, entry);
+    }
+    // Same city can't earn the same badge twice (e.g. north === south is
+    // impossible), but guard anyway in case two categories share an icon.
+    if (!entry.icons.includes(icon)) entry.icons.push(icon);
+    entry.titles.push(title);
+  };
+
+  if (stats.extremes) {
+    add(stats.extremes.north.lat, stats.extremes.north.lon, "⬆️", `Northernmost — ${stats.extremes.north.name}`);
+    add(stats.extremes.south.lat, stats.extremes.south.lon, "⬇️", `Southernmost — ${stats.extremes.south.name}`);
+    add(stats.extremes.east.lat, stats.extremes.east.lon, "➡️", `Easternmost — ${stats.extremes.east.name}`);
+    add(stats.extremes.west.lat, stats.extremes.west.lon, "⬅️", `Westernmost — ${stats.extremes.west.name}`);
+  }
+  stats.furthest.forEach((f, i) => {
+    add(f.lat, f.lon, RANK_ICON[i] ?? String(i + 1), `#${i + 1} furthest from home — ${f.name} (${Math.round(f.miles).toLocaleString()} mi)`);
+  });
+  if (stats.maxDistance) {
+    const { aLat, aLon, a, bLat, bLon, b, miles } = stats.maxDistance;
+    add(aLat, aLon, "📍", `Furthest apart — ${a} ↔ ${b} (${Math.round(miles).toLocaleString()} mi)`);
+    add(bLat, bLon, "📍", `Furthest apart — ${b} ↔ ${a} (${Math.round(miles).toLocaleString()} mi)`);
+  }
+
+  for (const { lat, lon, icons, titles } of byCoord.values()) {
+    const el = document.createElement("div");
+    el.className = "fp-special-marker";
+    el.textContent = icons.join("");
+    el.title = titles.join(" · ");
+    const marker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+    specialMarkers.push(marker);
+  }
 }
 
 // Snap a clicked point to the nearest dataset city and persist it as home. The
