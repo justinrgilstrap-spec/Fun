@@ -1397,6 +1397,23 @@ body {
   color: var(--muted);
 }
 
+/* Bigger section break in the fbs tab, between Power 4 + Independent → rest
+   of FBS (Group of Five) → FCS. A step up from .checklist-group-header (which
+   still marks each conference within a section) so the four buckets Justin
+   asked for read as distinct, not just a long run of conference headers. */
+.checklist-section-divider {
+  margin-top: 8px;
+  padding: 6px 6px 4px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+.checklist-section-divider:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
 .checklist-row-tri {
   cursor: default;
   justify-content: space-between;

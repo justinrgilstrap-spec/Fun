@@ -1,7 +1,7 @@
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from "geojson";
 import { distance } from "@turf/distance";
 import { point as turfPoint } from "@turf/helpers";
-import type { HomePoint } from "../types";
+import type { HomePoint, VenueState } from "../types";
 
 const COUNTRIES_URL = `${import.meta.env.BASE_URL}data/countries.geojson`;
 const STATES_URL = `${import.meta.env.BASE_URL}data/states.geojson`;
@@ -359,4 +359,30 @@ export function mlbId(feature: Feature): string {
 }
 export function mlbName(feature: Feature): string {
   return ((feature.properties ?? {}).TEAM as string) ?? "?";
+}
+
+// The four Power Conference schools + the two FBS independents (Notre Dame,
+// UConn) — the subset that counts toward the sidebar's "Power 4 Stadiums"
+// totalizer. Everything else in FBS (Group of Five) and all of FCS remain
+// fully trackable (map/search/checklist), they just don't move this stat —
+// matching how FCS/MLB already work, per Justin.
+const POWER4_CONFERENCES = new Set(["ACC", "Big 12", "Big Ten", "SEC"]);
+
+/**
+ * Count of visited FBS schools (any VenueState) whose conference is Power 4
+ * or Independent. Returns 0 until `loadFbs()` has resolved (see
+ * `prefetchFbsStats()` in main.ts, which warms this in the background so the
+ * stat is right from the first render, not just after the FBS view/checklist
+ * tab has been opened once).
+ */
+export function countPowerFbs(visited: Record<string, VenueState>): number {
+  if (!fbs) return 0;
+  let n = 0;
+  for (const f of fbs.features) {
+    const id = fbsId(f);
+    if (!(id in visited)) continue;
+    const conf = fbsConference(f);
+    if (conf === "Independent" || POWER4_CONFERENCES.has(conf)) n++;
+  }
+  return n;
 }

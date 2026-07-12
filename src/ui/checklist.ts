@@ -21,17 +21,33 @@ import type { LayerKind, BinaryLayerKind, VenueState } from "../types";
  * map popups already use, so this is just another door into the identical
  * write path — no new storage, no new merge logic.
  */
-export type ChecklistKind = "countries" | "parks" | "naRegions" | "fbs" | "fcs" | "mlb";
+export type ChecklistKind = "countries" | "parks" | "naRegions" | "fbs" | "mlb";
 
 interface ChecklistEntry {
   id: string;
   name: string;
   context: string;
   /** The real VisitedFile/LayerKind this id persists under — "naRegions" is a
-   *  UI-only filter over the same "states" data the full Regions layer uses. */
+   *  UI-only filter over the same "states" data the full Regions layer uses,
+   *  and "fbs" tab rows carry either "fbs" or "fcs" (see the merge below). */
   layerKind: LayerKind;
-  /** Conference, for the fbs/fcs group headers. Unused elsewhere. */
+  /** Conference, for the fbs-tab group headers. Unused elsewhere. */
   conference?: string;
+  /**
+   * fbs-tab section order: 0 = Power 4 (ACC/Big 12/Big Ten/SEC), 1 = Independent,
+   * 2 = the rest of FBS (Group of Five), 3 = FCS. Drives both the section
+   * dividers and the sort order — Justin wants Power 4 schools front and
+   * center since that's what the sidebar totalizer tracks, with everything
+   * else still one tab away for search/browse but visually secondary.
+   */
+  tier?: number;
+}
+
+const POWER4_CONFERENCES = new Set(["ACC", "Big 12", "Big Ten", "SEC"]);
+
+function fbsTier(conference: string): number {
+  if (conference === "Independent") return 1;
+  return POWER4_CONFERENCES.has(conference) ? 0 : 2;
 }
 
 // Natural Earth's exact ADMIN spelling for the three North American countries.
@@ -42,18 +58,17 @@ const TAB_LABEL: Record<ChecklistKind, string> = {
   parks: "National Parks",
   naRegions: "N. America Regions",
   fbs: "FBS",
-  fcs: "FCS",
   mlb: "MLB",
 };
 
 // Which control a tab's rows use. "tri" renders 3 small state buttons instead
-// of a checkbox, and groups rows under conference headers.
+// of a checkbox, and groups rows under conference headers (+ tier dividers,
+// fbs tab only — see buildEntries).
 const ROW_KIND: Record<ChecklistKind, "binary" | "tri"> = {
   countries: "binary",
   parks: "binary",
   naRegions: "binary",
   fbs: "tri",
-  fcs: "tri",
   mlb: "binary",
 };
 
@@ -112,21 +127,44 @@ async function buildEntries(kind: ChecklistKind): Promise<ChecklistEntry[]> {
       });
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
-  } else if (kind === "fbs" || kind === "fcs") {
-    const fc = kind === "fbs" ? await loadFbs() : await loadFcs();
-    const idFn = kind === "fbs" ? fbsId : fcsId;
-    const nameFn = kind === "fbs" ? fbsName : fcsName;
-    const confFn = kind === "fbs" ? fbsConference : fcsConference;
-    entries = fc.features.map((f) => ({
-      id: idFn(f),
-      name: nameFn(f),
-      context: confFn(f),
-      conference: confFn(f),
-      layerKind: kind,
-    }));
-    // Conference alphabetical, school alphabetical within — matches how the
-    // grouped renderer walks the list (see renderList below).
-    entries.sort((a, b) => (a.conference ?? "").localeCompare(b.conference ?? "") || a.name.localeCompare(b.name));
+  } else if (kind === "fbs") {
+    // The fbs tab covers both FBS and FCS — Justin wants Power 4 + Independent
+    // front and center (that's what the sidebar totalizer tracks), then the
+    // rest of FBS, then all of FCS, still one tab away rather than a
+    // separate one. tier drives both the sort order and the section dividers
+    // renderList inserts between buckets.
+    const [fbsFc, fcsFc] = await Promise.all([loadFbs(), loadFcs()]);
+    const fbsEntries: ChecklistEntry[] = fbsFc.features.map((f) => {
+      const conference = fbsConference(f);
+      return {
+        id: fbsId(f),
+        name: fbsName(f),
+        context: conference,
+        conference,
+        layerKind: "fbs",
+        tier: fbsTier(conference),
+      };
+    });
+    const fcsEntries: ChecklistEntry[] = fcsFc.features.map((f) => {
+      const conference = fcsConference(f);
+      return {
+        id: fcsId(f),
+        name: fcsName(f),
+        context: conference,
+        conference,
+        layerKind: "fcs",
+        tier: 3,
+      };
+    });
+    entries = [...fbsEntries, ...fcsEntries];
+    // tier first (Power 4 → Independent → rest of FBS → FCS), conference
+    // alphabetical within a tier, school alphabetical within a conference.
+    entries.sort(
+      (a, b) =>
+        (a.tier ?? 0) - (b.tier ?? 0) ||
+        (a.conference ?? "").localeCompare(b.conference ?? "") ||
+        a.name.localeCompare(b.name),
+    );
   } else {
     const fc = await loadMlb();
     entries = fc.features.map((f) => ({
@@ -266,11 +304,24 @@ export function initChecklist(opts: ChecklistOptions): ChecklistHandle {
       listEl.replaceChildren(...filtered.map((entry) => binaryRow(entry, canToggle)));
       return;
     }
-    // Grouped rendering for fbs/fcs: a header row whenever the conference
-    // changes as we walk the (already conference-sorted) filtered list.
+    // Grouped rendering for the fbs tab: a header row whenever the conference
+    // changes as we walk the (already tier + conference-sorted) filtered
+    // list, plus a bigger section divider whenever the tier changes (Power 4
+    // → Independent → rest of FBS → FCS) so the four buckets read as
+    // distinct sections, not just a long run of conference headers.
     const rows: HTMLLIElement[] = [];
     let lastConference: string | undefined;
+    let lastTier: number | undefined;
     for (const entry of filtered) {
+      if (entry.tier !== undefined && entry.tier !== lastTier) {
+        lastTier = entry.tier;
+        if (entry.tier === 2 || entry.tier === 3) {
+          const divider = document.createElement("li");
+          divider.className = "checklist-section-divider";
+          divider.textContent = entry.tier === 2 ? "Group of Five" : "FCS";
+          rows.push(divider);
+        }
+      }
       if (entry.conference !== lastConference) {
         lastConference = entry.conference;
         const header = document.createElement("li");
