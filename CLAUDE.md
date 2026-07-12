@@ -176,14 +176,26 @@ are not derived from one shared constant, so a color change needs both edited).
 MLB is a plain binary `string[]` like parks/cities ("been to a game there" or
 not) — no campus/stadium distinction.
 
-Only **FBS** counts toward a sidebar stat ("FBS Stadiums X / 138" — any of the
-3 states counts). FCS and MLB are deliberately search/checklist/map-only, per
-Justin: he wants to browse and mark the full FCS and MLB universes but doesn't
-want them inflating the headline numbers the way National Parks/Countries do.
+Only **Power 4 + Independent FBS schools** count toward a sidebar stat
+("Power 4 Stadiums X / 69" — any of the 3 states counts; see `countPowerFbs()`
+in `src/geo/datasets.ts`). The rest of FBS (Group of Five: American, CUSA,
+MAC, Mountain West, Pac-12, Sun Belt) and all of FCS/MLB are deliberately
+search/checklist/map-only — Justin wants to browse and mark the full FBS/FCS/
+MLB universes without them inflating the headline number.
 
-The checklist tab for FBS/FCS groups schools by conference (alphabetical,
-schools alphabetical within) instead of one flat list — see `buildEntries()`
-in `src/ui/checklist.ts`. MLB's checklist tab is flat, like Countries/Parks.
+FCS has **no dedicated "View" radio** — unlike every other layer, it can't be
+selected as a standalone map view. It's still a fully wired `LayerKind`
+though: search results still fly to it and open the normal popup
+(`activateLayer()` doesn't care whether a radio exists for the kind it's
+switching to), and it's still fully toggleable. It's just one tab lighter in
+the sidebar's View section.
+
+The checklist has one merged tab covering both FBS and FCS (labeled "FBS"),
+ordered into four sections — Power 4 (alphabetical), Independent, the rest of
+FBS ("Group of Five", alphabetical), then all of FCS (alphabetical) — with a
+bigger divider between sections and a per-conference header within each (see
+`buildEntries()`/`fbsTier()` in `src/ui/checklist.ts`). MLB's checklist tab is
+flat, like Countries/Parks.
 
 Provenance: stadium coordinates for 250 of the 268 schools/teams came from
 [gboeing/data-visualization](https://github.com/gboeing/data-visualization)'s

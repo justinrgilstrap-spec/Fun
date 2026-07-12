@@ -12,7 +12,7 @@ import { initSearch } from "./ui/search";
 import { initChecklist } from "./ui/checklist";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
-import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCities, maxCityDistance, loadCities } from "./geo/datasets";
+import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCities, maxCityDistance, loadCities, countPowerFbs, loadFbs } from "./geo/datasets";
 import type { LayerKind, BinaryLayerKind, VenueState, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -164,10 +164,12 @@ function statsFrom(file: VisitedFile) {
     states: file.states.length,
     cities: file.cities.length,
     parks: file.parks.length,
-    // Any of the 3 VenueStates counts toward the totalizer — "been to campus"
-    // still means the stadium's been visited, same as "been to a game there".
-    // FCS/MLB deliberately have no equivalent stat (search/mark-only, per Justin).
-    fbs: Object.keys(file.fbs).length,
+    // Power 4 + Independent only — the rest of FBS (Group of Five) and all
+    // of FCS/MLB stay fully trackable but don't move this stat, per Justin.
+    // Any of the 3 VenueStates counts ("been to campus" counts same as
+    // "been to a game there"). Returns 0 until fbs.json has loaded — see
+    // prefetchFbsStats() below, which warms it in the background.
+    fbs: countPowerFbs(file.fbs),
     continents: countContinents(file.countries),
     usStates: countUsStates(file.states),
     continentBreakdown: countsByContinent(file.countries),
@@ -323,6 +325,11 @@ async function bootstrap() {
   // returns null and those rows stay hidden; once loaded we re-render the stats.
   // This also warms the Cities view. Non-blocking and non-fatal on failure.
   void prefetchCityStats();
+  // Same idea for fbs.json: countPowerFbs() needs each school's conference,
+  // which only the dataset (not the persisted visited.json) knows. Without
+  // this, the "Power 4 Stadiums" stat would read 0 until the user happened to
+  // open the FBS view or checklist tab at least once.
+  void prefetchFbsStats();
 }
 
 async function prefetchCityStats() {
@@ -330,6 +337,19 @@ async function prefetchCityStats() {
     await loadCities();
   } catch (err) {
     console.error("City-stats prefetch failed:", err);
+    return;
+  }
+  const hasData =
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0 ||
+    Object.keys(current.fbs).length > 0 || Object.keys(current.fcs).length > 0 || current.mlb.length > 0;
+  if (hasData) renderStats(statsEl, statsFrom(current));
+}
+
+async function prefetchFbsStats() {
+  try {
+    await loadFbs();
+  } catch (err) {
+    console.error("FBS-stats prefetch failed:", err);
     return;
   }
   const hasData =
