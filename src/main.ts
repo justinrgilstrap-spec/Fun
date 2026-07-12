@@ -12,7 +12,7 @@ import { initSearch } from "./ui/search";
 import { initChecklist } from "./ui/checklist";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
-import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCity, loadCities } from "./geo/datasets";
+import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCities, maxCityDistance, loadCities } from "./geo/datasets";
 import type { LayerKind, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
@@ -158,7 +158,8 @@ function statsFrom(file: VisitedFile) {
     usStates: countUsStates(file.states),
     continentBreakdown: countsByContinent(file.countries),
     extremes: cityExtremes(file.cities),
-    furthest: furthestCity(file.home, file.cities),
+    furthest: furthestCities(file.home, file.cities),
+    maxDistance: maxCityDistance(file.cities),
   };
 }
 
