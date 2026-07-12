@@ -1,10 +1,25 @@
 import { readTextFile, writeTextFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
-import type { HomePoint, RawTimelineImport, VisitedFile } from "../types";
+import type { HomePoint, RawTimelineImport, VenueState, VisitedFile } from "../types";
 
 const VISITED_URL = `${import.meta.env.BASE_URL}data/visited.json`;
 
-const EMPTY: VisitedFile = { countries: [], states: [], cities: [], parks: [], updatedAt: 0 };
+const EMPTY: VisitedFile = { countries: [], states: [], cities: [], parks: [], fbs: {}, fcs: {}, mlb: [], updatedAt: 0 };
+
+const VENUE_STATES = new Set<VenueState>(["campus", "stadium", "game"]);
+
+// Keep only well-formed entries: known VenueState values, string keys. Drops
+// anything else (old files, hand-edits) rather than propagating garbage.
+function normalizeVenueRecord(data: unknown): Record<string, VenueState> {
+  if (!data || typeof data !== "object") return {};
+  const out: Record<string, VenueState> = {};
+  for (const [id, value] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof value === "string" && VENUE_STATES.has(value as VenueState)) {
+      out[id] = value as VenueState;
+    }
+  }
+  return out;
+}
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -42,6 +57,10 @@ function normalizeVisitedShape(data: Partial<VisitedFile>): VisitedFile {
     // Additive, backward-compatible: older visited.json files predate the
     // Parks layer and simply have no `parks` key.
     parks: Array.isArray(data.parks) ? data.parks : [],
+    // Same story for fbs/fcs (added with Sports Venues) and mlb (binary, like parks).
+    fbs: normalizeVenueRecord(data.fbs),
+    fcs: normalizeVenueRecord(data.fcs),
+    mlb: Array.isArray(data.mlb) ? data.mlb : [],
     ...(home ? { home } : {}),
     updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : 0,
   };
@@ -81,6 +100,9 @@ export async function saveVisited(merged: Omit<VisitedFile, "updatedAt">): Promi
     states: Array.from(new Set(merged.states)).sort(),
     cities: Array.from(new Set(merged.cities)).sort(),
     parks: Array.from(new Set(merged.parks)).sort(),
+    fbs: merged.fbs,
+    fcs: merged.fcs,
+    mlb: Array.from(new Set(merged.mlb)).sort(),
     ...(merged.home ? { home: merged.home } : {}),
     updatedAt: Date.now(),
   };
@@ -110,11 +132,18 @@ export function mergeVisited(
   },
 ): Omit<VisitedFile, "updatedAt"> {
   // Carry the existing home through — an import adds places, it must never wipe it.
+  // Sports Venues (fbs/fcs/mlb) are manual-only: nothing about a Timeline import
+  // can tell "went to a game" from "drove past the stadium", so there's no
+  // spatial-join signal to merge in here — just carry the existing state through
+  // untouched, same as home.
   return {
     countries: Array.from(new Set([...base.countries, ...(add.countries ?? [])])).sort(),
     states: Array.from(new Set([...base.states, ...(add.states ?? [])])).sort(),
     cities: Array.from(new Set([...base.cities, ...(add.cities ?? [])])).sort(),
     parks: Array.from(new Set([...base.parks, ...(add.parks ?? [])])).sort(),
+    fbs: base.fbs,
+    fcs: base.fcs,
+    mlb: base.mlb,
     ...(base.home ? { home: base.home } : {}),
   };
 }

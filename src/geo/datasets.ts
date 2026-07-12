@@ -7,11 +7,17 @@ const COUNTRIES_URL = `${import.meta.env.BASE_URL}data/countries.geojson`;
 const STATES_URL = `${import.meta.env.BASE_URL}data/states.geojson`;
 const CITIES_URL = `${import.meta.env.BASE_URL}data/cities.geojson`;
 const PARKS_URL = `${import.meta.env.BASE_URL}data/parks.geojson`;
+const FBS_URL = `${import.meta.env.BASE_URL}data/fbs.json`;
+const FCS_URL = `${import.meta.env.BASE_URL}data/fcs.json`;
+const MLB_URL = `${import.meta.env.BASE_URL}data/mlb.json`;
 
 let countries: FeatureCollection<Polygon | MultiPolygon> | null = null;
 let states: FeatureCollection<Polygon | MultiPolygon> | null = null;
 let cities: FeatureCollection<Point> | null = null;
 let parks: FeatureCollection<Polygon | MultiPolygon> | null = null;
+let fbs: FeatureCollection<Point> | null = null;
+let fcs: FeatureCollection<Point> | null = null;
+let mlb: FeatureCollection<Point> | null = null;
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -51,6 +57,31 @@ export async function loadParks() {
     parks = await fetchJson<FeatureCollection<Polygon | MultiPolygon>>(PARKS_URL);
   }
   return parks;
+}
+
+// Sports Venues datasets: FBS/FCS school stadiums and MLB ballparks, all plain
+// point FeatureCollections (no polygon boundaries to trim/simplify, hence no
+// scripts/trim-geojson.mjs entry — each file is a few KB already). See
+// CLAUDE.md for provenance and how to regenerate/extend these.
+export async function loadFbs() {
+  if (!fbs) {
+    fbs = await fetchJson<FeatureCollection<Point>>(FBS_URL);
+  }
+  return fbs;
+}
+
+export async function loadFcs() {
+  if (!fcs) {
+    fcs = await fetchJson<FeatureCollection<Point>>(FCS_URL);
+  }
+  return fcs;
+}
+
+export async function loadMlb() {
+  if (!mlb) {
+    mlb = await fetchJson<FeatureCollection<Point>>(MLB_URL);
+  }
+  return mlb;
 }
 
 // Dependent territories that Natural Earth assigns their own ISO_A3 code but
@@ -298,4 +329,34 @@ export function parkId(feature: Feature): string {
 export function parkName(feature: Feature): string {
   const props = feature.properties ?? {};
   return (props.UNIT_NAME as string) ?? "?";
+}
+
+// FBS/FCS schools and MLB teams all share the same {SCHOOL_ID|TEAM_ID, SCHOOL|TEAM,
+// CONFERENCE, STADIUM, CITY, STATE} property shape (see the build script noted in
+// CLAUDE.md), so one set of accessors covers all three.
+export function fbsId(feature: Feature): string {
+  return ((feature.properties ?? {}).SCHOOL_ID as string) ?? "?";
+}
+export function fbsName(feature: Feature): string {
+  return ((feature.properties ?? {}).SCHOOL as string) ?? "?";
+}
+export function fbsConference(feature: Feature): string {
+  return ((feature.properties ?? {}).CONFERENCE as string) ?? "";
+}
+
+export function fcsId(feature: Feature): string {
+  return ((feature.properties ?? {}).SCHOOL_ID as string) ?? "?";
+}
+export function fcsName(feature: Feature): string {
+  return ((feature.properties ?? {}).SCHOOL as string) ?? "?";
+}
+export function fcsConference(feature: Feature): string {
+  return ((feature.properties ?? {}).CONFERENCE as string) ?? "";
+}
+
+export function mlbId(feature: Feature): string {
+  return ((feature.properties ?? {}).TEAM_ID as string) ?? "?";
+}
+export function mlbName(feature: Feature): string {
+  return ((feature.properties ?? {}).TEAM as string) ?? "?";
 }

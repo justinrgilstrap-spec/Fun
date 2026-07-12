@@ -1,23 +1,36 @@
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from "geojson";
-import { loadCountries, loadStates, loadCities, loadParks, countryIso, stateIso, cityId, parkId } from "../geo/datasets";
+import {
+  loadCountries, loadStates, loadCities, loadParks, loadFbs, loadFcs, loadMlb,
+  countryIso, stateIso, cityId, parkId,
+  fbsId, fcsId, mlbId,
+} from "../geo/datasets";
 import { isTauri } from "../store/visitedFile";
-import type { LayerKind, HomePoint } from "../types";
+import type { LayerKind, BinaryLayerKind, HomePoint, VenueState } from "../types";
 
 interface LayerState {
   visitedCountries: Set<string>;
   visitedStates: Set<string>;
   visitedCities: Set<string>;
   visitedParks: Set<string>;
+  visitedMlb: Set<string>;
+  // Sports Venues tri-state: presence in the map means a state is set, absence
+  // means unvisited. Unlike the Sets above there's no "toggle" — main.ts's
+  // setVenueState either sets an entry to a specific VenueState or deletes it.
+  fbsState: Map<string, VenueState>;
+  fcsState: Map<string, VenueState>;
 }
 
-// Maps a LayerKind to its LayerState key, so code that has to loop over "every
-// kind" (initLayers below) doesn't need a hand-written ternary per kind.
-const KIND_SET: Record<LayerKind, keyof LayerState> = {
+// Maps a *binary* LayerKind to its LayerState Set key, so code that has to loop
+// over "every binary kind" (initLayers below) doesn't need a hand-written
+// ternary per kind. fbs/fcs are deliberately excluded — their tri-state maps
+// are handled by their own dedicated logic throughout this file.
+const KIND_SET: Record<BinaryLayerKind, keyof Pick<LayerState, "visitedCountries" | "visitedStates" | "visitedCities" | "visitedParks" | "visitedMlb">> = {
   countries: "visitedCountries",
   states: "visitedStates",
   cities: "visitedCities",
   parks: "visitedParks",
+  mlb: "visitedMlb",
 };
 
 let currentLayer: LayerKind = "countries";
@@ -29,6 +42,9 @@ let layerState: LayerState = {
   visitedStates: new Set(),
   visitedCities: new Set(),
   visitedParks: new Set(),
+  visitedMlb: new Set(),
+  fbsState: new Map(),
+  fcsState: new Map(),
 };
 
 const VISITED_FILL = "#CC6B49";
@@ -78,6 +94,64 @@ async function taggedCities(): Promise<FeatureCollection<Point>> {
 async function taggedParks(): Promise<FeatureCollection<Polygon | MultiPolygon>> {
   const parks = await loadParks();
   return { type: "FeatureCollection", features: tagVisited(parks.features, layerState.visitedParks, parkId) };
+}
+async function taggedMlb(): Promise<FeatureCollection<Point>> {
+  const mlb = await loadMlb();
+  return { type: "FeatureCollection", features: tagVisited(mlb.features, layerState.visitedMlb, mlbId) };
+}
+
+// Sports Venues (FBS/FCS) color coding, per Justin: yellow = been to campus,
+// blue = been inside the stadium, purple = been to a game there. Not-visited
+// uses a neutral gray rather than the app's usual NOT_VISITED_FILL/OUTLINE
+// blues, because "stadium" is already blue here — reusing the geography
+// layers' not-visited blue would make an unvisited school and a
+// been-in-the-stadium school look identical at a glance.
+const VENUE_COLOR: Record<VenueState, string> = {
+  campus: "#D9B84A",
+  stadium: "#3D7BA8",
+  game: "#8E5FBF",
+};
+const VENUE_NEUTRAL = "#6B7280";
+const VENUE_STATE_CODE: Record<VenueState, number> = { campus: 1, stadium: 2, game: 3 };
+
+function venueStateExpr(colorFor: (code: number) => string) {
+  return [
+    "case",
+    ["==", ["get", "state"], 1], colorFor(1),
+    ["==", ["get", "state"], 2], colorFor(2),
+    ["==", ["get", "state"], 3], colorFor(3),
+    colorFor(0),
+  ] as unknown as maplibregl.PropertyValueSpecification<string>;
+}
+const venueFillExpr = venueStateExpr((code) =>
+  code === 1 ? VENUE_COLOR.campus : code === 2 ? VENUE_COLOR.stadium : code === 3 ? VENUE_COLOR.game : VENUE_NEUTRAL,
+);
+
+// Tags each feature with a `state` property: 0 (unvisited) or the VENUE_STATE_CODE
+// for whatever VenueState is recorded for that id. Parallel to tagVisited, but
+// reading a Map<string,VenueState> instead of a Set<string>.
+function tagVenueState<T extends Feature<Point>>(
+  features: T[],
+  state: Map<string, VenueState>,
+  getId: (f: Feature) => string,
+): T[] {
+  return features.map((f, i) => {
+    const v = state.get(getId(f));
+    return {
+      ...f,
+      id: i,
+      properties: { ...(f.properties ?? {}), state: v ? VENUE_STATE_CODE[v] : 0 },
+    };
+  });
+}
+
+async function taggedFbs(): Promise<FeatureCollection<Point>> {
+  const fbs = await loadFbs();
+  return { type: "FeatureCollection", features: tagVenueState(fbs.features, layerState.fbsState, fbsId) };
+}
+async function taggedFcs(): Promise<FeatureCollection<Point>> {
+  const fcs = await loadFcs();
+  return { type: "FeatureCollection", features: tagVenueState(fcs.features, layerState.fcsState, fcsId) };
 }
 
 // Add a dataset's source + layers if they aren't on the map yet; no-op when they
@@ -184,11 +258,69 @@ async function ensureCities(map: MlMap): Promise<void> {
   }, labelBeforeId(map));
 }
 
+async function ensureMlb(map: MlMap): Promise<void> {
+  if (map.getSource("mlb")) return;
+  map.addSource("mlb", { type: "geojson", data: await taggedMlb() });
+  map.addLayer({
+    id: "mlb-circle",
+    type: "circle",
+    source: "mlb",
+    paint: {
+      "circle-radius": 6,
+      "circle-color": ["case", ["==", ["get", "visited"], 1], "#8E5FBF", VENUE_NEUTRAL],
+      "circle-stroke-color": "#1a1a1a",
+      "circle-stroke-width": 1,
+      "circle-opacity": 0.9,
+      "circle-stroke-opacity": 0.5,
+    },
+  }, labelBeforeId(map));
+}
+
+// FBS/FCS: same circle-marker treatment, colored by the 3-way state instead of
+// a binary visited flag. Identical paint besides which source/id they read.
+async function ensureFbs(map: MlMap): Promise<void> {
+  if (map.getSource("fbs")) return;
+  map.addSource("fbs", { type: "geojson", data: await taggedFbs() });
+  map.addLayer({
+    id: "fbs-circle",
+    type: "circle",
+    source: "fbs",
+    paint: {
+      "circle-radius": 6,
+      "circle-color": venueFillExpr,
+      "circle-stroke-color": "#1a1a1a",
+      "circle-stroke-width": 1,
+      "circle-opacity": 0.9,
+      "circle-stroke-opacity": 0.5,
+    },
+  }, labelBeforeId(map));
+}
+async function ensureFcs(map: MlMap): Promise<void> {
+  if (map.getSource("fcs")) return;
+  map.addSource("fcs", { type: "geojson", data: await taggedFcs() });
+  map.addLayer({
+    id: "fcs-circle",
+    type: "circle",
+    source: "fcs",
+    paint: {
+      "circle-radius": 5,
+      "circle-color": venueFillExpr,
+      "circle-stroke-color": "#1a1a1a",
+      "circle-stroke-width": 1,
+      "circle-opacity": 0.9,
+      "circle-stroke-opacity": 0.5,
+    },
+  }, labelBeforeId(map));
+}
+
 const ENSURE: Record<LayerKind, (map: MlMap) => Promise<void>> = {
   countries: ensureCountries,
   states: ensureStates,
   cities: ensureCities,
   parks: ensureParks,
+  fbs: ensureFbs,
+  fcs: ensureFcs,
+  mlb: ensureMlb,
 };
 
 const TAGGED: Record<LayerKind, () => Promise<FeatureCollection>> = {
@@ -196,6 +328,9 @@ const TAGGED: Record<LayerKind, () => Promise<FeatureCollection>> = {
   states: taggedStates,
   cities: taggedCities,
   parks: taggedParks,
+  fbs: taggedFbs,
+  fcs: taggedFcs,
+  mlb: taggedMlb,
 };
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
@@ -204,14 +339,22 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
   return true;
 }
 
+function venueMapsEqual(a: Map<string, VenueState>, b: Map<string, VenueState>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
+
 export async function initLayers(map: MlMap, state: LayerState): Promise<void> {
   // Work out which visited sets actually changed *before* adopting the new
   // state, so only those sources get re-uploaded below. setData re-parses the
   // whole GeoJSON (states is ~26 MB), so pushing unchanged data on every save
   // made each "Mark visited" click visibly hitch once Regions had been opened.
-  const changed = (Object.keys(KIND_SET) as LayerKind[]).filter(
+  const changed: LayerKind[] = (Object.keys(KIND_SET) as BinaryLayerKind[]).filter(
     (kind) => !setsEqual(state[KIND_SET[kind]], layerState[KIND_SET[kind]]),
   );
+  if (!venueMapsEqual(state.fbsState, layerState.fbsState)) changed.push("fbs");
+  if (!venueMapsEqual(state.fcsState, layerState.fcsState)) changed.push("fcs");
   // Sources created by the ensure* calls below are tagged with the new state
   // already — only sources that predate this call can hold stale data.
   const preexisting = new Set(changed.filter((kind) => map.getSource(kind)));
@@ -255,6 +398,9 @@ const ALL_LAYER_IDS = [
   "cities-circle",
   "parks-fill",
   "parks-line",
+  "fbs-circle",
+  "fcs-circle",
+  "mlb-circle",
 ];
 
 const VISIBLE_BY_LAYER: Record<LayerKind, string[]> = {
@@ -262,6 +408,9 @@ const VISIBLE_BY_LAYER: Record<LayerKind, string[]> = {
   states: ["countries-line", "states-fill", "states-line"],
   cities: ["countries-line", "cities-circle"],
   parks: ["countries-line", "parks-fill", "parks-line"],
+  fbs: ["countries-line", "fbs-circle"],
+  fcs: ["countries-line", "fcs-circle"],
+  mlb: ["countries-line", "mlb-circle"],
 };
 
 export function applyLayer(map: MlMap, kind: LayerKind): void {
@@ -313,6 +462,31 @@ function str(props: Record<string, unknown> | null, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
+// Sports Venues (FBS/FCS) popup: a 3-way pick instead of a single toggle.
+// `state` is the currently-recorded VenueState, or null if unvisited. Each
+// button is labeled with its own state name; the active one is marked
+// data-active so CSS can highlight it. Clicking the active button again clears
+// it (handled in wireVenuePopupActions, matching "re-pick to undo").
+function popupVenueHTML(
+  title: string,
+  subtitle: string,
+  state: VenueState | null,
+  canToggle: boolean,
+): string {
+  const sub = subtitle ? `<div class="fp-popup-sub">${escapeHtml(subtitle)}</div>` : "";
+  const statusText =
+    state === "campus" ? "Been to campus" : state === "stadium" ? "Been in the stadium" : state === "game" ? "Been to a game here" : "Not visited yet";
+  const status = `<div class="fp-popup-status${state ? " is-visited" : ""}">${statusText}</div>`;
+  const btn = (value: VenueState, label: string) =>
+    canToggle
+      ? `<button type="button" class="fp-popup-venue-btn${state === value ? " is-active" : ""}" data-venue-state="${value}">${label}</button>`
+      : "";
+  const actions = canToggle
+    ? `<div class="fp-popup-venue-actions">${btn("campus", "Campus")}${btn("stadium", "Stadium")}${btn("game", "Game")}</div>`
+    : "";
+  return `<div class="fp-popup"><div class="fp-popup-title">${escapeHtml(title)}</div>${sub}${status}${actions}</div>`;
+}
+
 function joinParts(parts: string[]): string {
   return parts.filter(Boolean).join(", ");
 }
@@ -329,6 +503,9 @@ function featureKey(kind: LayerKind, props: Record<string, unknown> | null): str
   }
   if (kind === "parks") {
     return `parks:${str(props, "UNIT_NAME")}`;
+  }
+  if (kind === "fbs" || kind === "fcs" || kind === "mlb") {
+    return `${kind}:${str(props, "SCHOOL_ID") || str(props, "TEAM_ID")}`;
   }
   return `cities:${joinParts([str(props, "NAMEASCII") || str(props, "NAME"), str(props, "ADM1NAME"), str(props, "ADM0NAME")])}`;
 }
@@ -369,6 +546,15 @@ function contentFor(
       isHome,
     );
   }
+  if (kind === "fbs" || kind === "fcs") {
+    const raw = props?.state;
+    const code = typeof raw === "number" ? raw : 0;
+    const state: VenueState | null = code === 1 ? "campus" : code === 2 ? "stadium" : code === 3 ? "game" : null;
+    return popupVenueHTML(str(props, "SCHOOL") || "Unknown", str(props, "CONFERENCE"), state, canToggle);
+  }
+  if (kind === "mlb") {
+    return popupHTML(str(props, "TEAM") || "Unknown", str(props, "STADIUM"), visited, canToggle, isHome);
+  }
   return popupHTML(
     str(props, "NAME") || str(props, "NAMEASCII") || "Unknown",
     joinParts([str(props, "ADM1NAME"), str(props, "ADM0NAME")]),
@@ -400,16 +586,29 @@ function visitedId(kind: LayerKind, feature: Feature): string {
   if (kind === "countries") return countryIso(feature);
   if (kind === "states") return stateIso(feature);
   if (kind === "parks") return parkId(feature);
+  if (kind === "fbs") return fbsId(feature);
+  if (kind === "fcs") return fcsId(feature);
+  if (kind === "mlb") return mlbId(feature);
   return cityId(feature);
 }
 
 // Registered by main.ts (which owns the persisted `current` file). Flips the ID,
 // saves, re-tags the map + stats, and resolves to the new visited state so the
 // popup can re-render. Null in the browser build (no toggle button is shown).
-type ToggleHandler = (kind: LayerKind, id: string) => Promise<boolean>;
+// Scoped to BinaryLayerKind — fbs/fcs use venueStateHandler below instead.
+type ToggleHandler = (kind: BinaryLayerKind, id: string) => Promise<boolean>;
 let toggleHandler: ToggleHandler | null = null;
 export function setToggleHandler(fn: ToggleHandler): void {
   toggleHandler = fn;
+}
+
+// Registered by main.ts. Sets (or, re-picking the active state, clears) a
+// school's VenueState, saves, re-tags the map + stats, and resolves to the new
+// state (null if cleared) so the popup can re-render. Null in the browser build.
+type VenueStateHandler = (kind: "fbs" | "fcs", id: string, state: VenueState) => Promise<VenueState | null>;
+let venueStateHandler: VenueStateHandler | null = null;
+export function setVenueStateHandler(fn: VenueStateHandler): void {
+  venueStateHandler = fn;
 }
 
 // Registered by main.ts. Snaps the given point to the nearest city and persists
@@ -419,6 +618,43 @@ type HomeHandler = (lng: number, lat: number) => Promise<void>;
 let homeHandler: HomeHandler | null = null;
 export function setHomeHandler(fn: HomeHandler): void {
   homeHandler = fn;
+}
+
+// Sports Venues (FBS/FCS) popup wiring: three state buttons instead of one
+// toggle. Clicking a button sets that state; clicking the already-active one
+// clears it back to unvisited (mirrors the "re-click to unmark" pattern the
+// binary toggle button uses elsewhere).
+function wireVenuePopupActions(
+  p: maplibregl.Popup,
+  kind: "fbs" | "fcs",
+  feature: Feature,
+  ll: [number, number],
+): void {
+  const root = p.getElement();
+  if (!root) return;
+  const buttons = root.querySelectorAll<HTMLButtonElement>(".fp-popup-venue-btn");
+  buttons.forEach((btn) => {
+    btn.addEventListener(
+      "click",
+      async () => {
+        if (!venueStateHandler) return;
+        buttons.forEach((b) => (b.disabled = true));
+        const state = btn.dataset.venueState as VenueState;
+        await venueStateHandler(kind, visitedId(kind, feature), state);
+        // Re-read the just-saved state from wherever main.ts stashed it
+        // (layerState.fbsState/fcsState, updated by the caller's re-render)
+        // rather than trusting the handler's return blindly — same pattern
+        // openFeaturePopup uses to derive `visited` from layerState.
+        const stateMap = kind === "fbs" ? layerState.fbsState : layerState.fcsState;
+        const newState = stateMap.get(visitedId(kind, feature)) ?? null;
+        const code = newState ? VENUE_STATE_CODE[newState] : 0;
+        const props = { ...(feature.properties ?? {}), state: code };
+        p.setHTML(contentFor(kind, props, true, false));
+        wireVenuePopupActions(p, kind, feature, ll);
+      },
+      { once: true },
+    );
+  });
 }
 
 // Bind the popup's write-mode buttons (Mark/Unmark + Set as home). After a toggle
@@ -432,6 +668,10 @@ function wirePopupActions(
   ll: [number, number],
   isHome: boolean,
 ): void {
+  if (kind === "fbs" || kind === "fcs") {
+    wireVenuePopupActions(p, kind, feature, ll);
+    return;
+  }
   const root = p.getElement();
   if (!root) return;
 
@@ -441,7 +681,7 @@ function wirePopupActions(
       "click",
       async () => {
         toggleBtn.disabled = true;
-        const nowVisited = await toggleHandler!(kind, visitedId(kind, feature));
+        const nowVisited = await toggleHandler!(kind as BinaryLayerKind, visitedId(kind, feature));
         const props = { ...(feature.properties ?? {}), visited: nowVisited ? 1 : 0 };
         p.setHTML(contentFor(kind, props, true, isHome));
         wirePopupActions(p, kind, feature, ll, isHome);
@@ -480,6 +720,9 @@ const CLICK_LAYERS: Array<[string, LayerKind]> = [
   ["states-fill", "states"],
   ["cities-circle", "cities"],
   ["parks-fill", "parks"],
+  ["fbs-circle", "fbs"],
+  ["fcs-circle", "fcs"],
+  ["mlb-circle", "mlb"],
 ];
 
 export function initInteractions(map: MlMap): void {
@@ -646,11 +889,15 @@ export function flyToFeature(map: MlMap, kind: LayerKind, feature: Feature): voi
  * tagged, so the visited flag is computed here from the current visited sets.
  */
 export function openFeaturePopup(map: MlMap, kind: LayerKind, feature: Feature): void {
-  const visitedSet = layerState[KIND_SET[kind]];
-  const props = {
-    ...(feature.properties ?? {}),
-    visited: visitedSet.has(visitedId(kind, feature)) ? 1 : 0,
-  };
+  let props: Record<string, unknown>;
+  if (kind === "fbs" || kind === "fcs") {
+    const stateMap = kind === "fbs" ? layerState.fbsState : layerState.fcsState;
+    const v = stateMap.get(visitedId(kind, feature));
+    props = { ...(feature.properties ?? {}), state: v ? VENUE_STATE_CODE[v] : 0 };
+  } else {
+    const visitedSet = layerState[KIND_SET[kind]];
+    props = { ...(feature.properties ?? {}), visited: visitedSet.has(visitedId(kind, feature)) ? 1 : 0 };
+  }
   const tagged: Feature = { ...feature, properties: props };
   const ll = anchorFor(kind, feature);
   const canToggle = isTauri();

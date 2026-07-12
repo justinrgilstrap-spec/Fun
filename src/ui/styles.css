@@ -926,6 +926,56 @@ body {
   cursor: default;
 }
 
+/* Sports Venues (FBS/FCS) popup: 3-way pick instead of a single toggle. */
+.fp-popup-venue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fp-popup-venue-btn {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.fp-popup-venue-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.fp-popup-venue-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Active state matches the map pin colors — see the checklist rule above for
+   why these are literal hex rather than --accent. */
+.fp-popup-venue-btn.is-active[data-venue-state="campus"] {
+  background: #D9B84A;
+  border-color: #D9B84A;
+  color: #1a1a1a;
+}
+.fp-popup-venue-btn.is-active[data-venue-state="stadium"] {
+  background: #3D7BA8;
+  border-color: #3D7BA8;
+  color: #fff;
+}
+.fp-popup-venue-btn.is-active[data-venue-state="game"] {
+  background: #8E5FBF;
+  border-color: #8E5FBF;
+  color: #fff;
+}
+
 /* Popup badge marking a place that already is the home pin */
 .fp-popup-home-badge {
   display: inline-flex;
@@ -1118,7 +1168,9 @@ body {
   .layer-toggles label,
   .onboarding-how > summary::before,
   .checklist-tab,
-  .checklist-row {
+  .checklist-row,
+  .checklist-venue-btn,
+  .fp-popup-venue-btn {
     transition: none;
   }
 }
@@ -1333,6 +1385,71 @@ body {
   font-size: 12.5px;
   color: var(--muted);
   text-align: center;
+}
+
+/* Sports Venues: FBS/FCS conference group headers in the checklist. */
+.checklist-group-header {
+  padding: 10px 6px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.checklist-row-tri {
+  cursor: default;
+  justify-content: space-between;
+}
+
+.checklist-venue-btns {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.checklist-venue-btn {
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.checklist-venue-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.checklist-venue-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Active-state colors match the map pins: yellow = campus, blue = stadium,
+   purple = game. Kept as literal hex (not --accent) since these three colors
+   are specifically what's drawn on the map — they need to stay in sync with
+   VENUE_COLOR in src/map/layers.ts, not with the app's theme accent. */
+.checklist-venue-btn.is-active:nth-child(1) {
+  background: #D9B84A;
+  border-color: #D9B84A;
+  color: #1a1a1a;
+}
+.checklist-venue-btn.is-active:nth-child(2) {
+  background: #3D7BA8;
+  border-color: #3D7BA8;
+  color: #fff;
+}
+.checklist-venue-btn.is-active:nth-child(3) {
+  background: #8E5FBF;
+  border-color: #8E5FBF;
+  color: #fff;
 }
 
 @media (max-width: 768px) {

@@ -1,5 +1,9 @@
 import type { Feature } from "geojson";
-import { loadCountries, loadStates, loadCities, loadParks, countryIso, stateIso, cityId, parkId } from "../geo/datasets";
+import {
+  loadCountries, loadStates, loadCities, loadParks, loadFbs, loadFcs, loadMlb,
+  countryIso, stateIso, cityId, parkId,
+  fbsId, fbsName, fbsConference, fcsId, fcsName, fcsConference, mlbId, mlbName,
+} from "../geo/datasets";
 import type { LayerKind } from "../types";
 
 /**
@@ -30,8 +34,11 @@ export interface SearchOptions {
 }
 
 const MAX_RESULTS = 8;
-const KIND_RANK: Record<LayerKind, number> = { countries: 0, states: 1, cities: 2, parks: 3 };
-const KIND_LABEL: Record<LayerKind, string> = { countries: "Country", states: "Region", cities: "City", parks: "National Park" };
+const KIND_RANK: Record<LayerKind, number> = { countries: 0, states: 1, cities: 2, parks: 3, fbs: 4, fcs: 5, mlb: 6 };
+const KIND_LABEL: Record<LayerKind, string> = {
+  countries: "Country", states: "Region", cities: "City", parks: "National Park",
+  fbs: "FBS", fcs: "FCS", mlb: "MLB",
+};
 
 // Case- and diacritic-insensitive matching: "sao paulo" finds São Paulo.
 function norm(s: string): string {
@@ -46,11 +53,14 @@ function str(props: Record<string, unknown> | null | undefined, key: string): st
 // Flatten the (cached) datasets into one searchable list. Runs once, on first
 // use; the awaited loads are what trigger the lazy states/cities downloads.
 async function buildIndex(): Promise<Entry[]> {
-  const [countries, states, cities, parks] = await Promise.all([
+  const [countries, states, cities, parks, fbs, fcs, mlb] = await Promise.all([
     loadCountries(),
     loadStates(),
     loadCities(),
     loadParks(),
+    loadFbs(),
+    loadFcs(),
+    loadMlb(),
   ]);
   const out: Entry[] = [];
   for (const f of countries.features) {
@@ -109,6 +119,39 @@ async function buildIndex(): Promise<Entry[]> {
       context: str(p, "STATE"),
       feature: f,
       norm: norm(name),
+      pop: 0,
+    });
+  }
+  for (const f of fbs.features) {
+    out.push({
+      kind: "fbs",
+      id: fbsId(f),
+      name: fbsName(f),
+      context: fbsConference(f),
+      feature: f,
+      norm: norm(fbsName(f)),
+      pop: 0,
+    });
+  }
+  for (const f of fcs.features) {
+    out.push({
+      kind: "fcs",
+      id: fcsId(f),
+      name: fcsName(f),
+      context: fcsConference(f),
+      feature: f,
+      norm: norm(fcsName(f)),
+      pop: 0,
+    });
+  }
+  for (const f of mlb.features) {
+    out.push({
+      kind: "mlb",
+      id: mlbId(f),
+      name: mlbName(f),
+      context: str(f.properties, "STADIUM"),
+      feature: f,
+      norm: norm(mlbName(f)),
       pop: 0,
     });
   }
