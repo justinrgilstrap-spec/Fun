@@ -720,15 +720,16 @@ body {
 
 .extreme-dir {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--accent-soft);
-  font-size: 11px;
-  line-height: 1;
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
 }
 
 .extreme-place {
@@ -759,15 +760,16 @@ body {
 
 .furthest-rank {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--accent-soft);
-  font-size: 11px;
-  line-height: 1;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .furthest-name {
