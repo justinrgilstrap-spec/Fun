@@ -63,12 +63,15 @@ on every PR, so that bar is enforced before merge.
 
 The import pipeline is the heart of the app:
 
-1. **Import** (`src/import/`) — `dropzone.ts` takes a dropped/selected JSON file;
-   `parser.ts` normalizes it into `{ points, visits }`. The parser handles
-   **multiple Google Timeline formats**: legacy Records (`locations`), legacy
-   Semantic (`timelineObjects`), on-device export (`semanticSegments` / bare
-   array), and `rawSignals`. Coordinates arrive as E7 ints, `geo:` strings, or
-   `lat,lng` strings depending on format — hence the several small parse helpers.
+1. **Import** (`src/import/`) — `dropzone.ts` accepts either a single dropped/
+   selected Google Timeline JSON file, or multiple files / a whole dropped
+   folder (Google Photos Takeout). `parser.ts` normalizes a Timeline file into
+   `{ points, visits }`. The parser handles **multiple Google Timeline
+   formats**: legacy Records (`locations`), legacy Semantic
+   (`timelineObjects`), on-device export (`semanticSegments` / bare array), and
+   `rawSignals`. Coordinates arrive as E7 ints, `geo:` strings, or `lat,lng`
+   strings depending on format — hence the several small parse helpers.
+   `googlePhotos.ts` handles the other source — see its own section below.
 2. **Spatial join** (`src/geo/spatialJoin.ts`) — each visit is matched to its
    containing country and state polygon (bbox pre-filter, then Turf
    `booleanPointInPolygon`) and to the nearest city within 25 km. Returns sets of
@@ -99,6 +102,54 @@ The import pipeline is the heart of the app:
    both in `layers.ts`). Polygon fly-tos anchor on the Natural Earth label point
    and fall back to bbox center; antimeridian-spanning countries (Russia, Fiji,
    USA) get the label-point path because their bbox is near-global.
+
+### Google Photos import (`src/import/googlePhotos.ts`)
+
+A second import source alongside Google Timeline, added because Timeline only
+covers wherever the user's phone had location history turned on — Google
+Photos often has geotagged photos from trips Timeline missed entirely (old
+phones, location history off, photos from someone else's camera later added
+to the library, etc).
+
+Each photo in a Google Photos Takeout export ships with a sidecar JSON next to
+the actual image/video file (e.g. `IMG_1234.jpg.supplemental-metadata.json`),
+shaped roughly like:
+
+```json
+{
+  "photoTakenTime": { "timestamp": "1623462547" },
+  "geoData": { "latitude": 35.6895, "longitude": 139.6917, "altitude": 12.3 }
+}
+```
+
+`parseGooglePhotosSidecars()` reads a batch of these (in batches of 500 —
+Takeout exports can be tens of thousands of files, and reading them all with
+one giant `Promise.all` risks a memory spike), and for each one that has both
+a `photoTakenTime` and a non-`(0, 0)` `geoData` (Google's sentinel for "no
+location recorded," used instead of omitting the field — a literal 0,0 visit
+would otherwise misread as a trip to the middle of the Gulf of Guinea),
+produces a **zero-duration `Visit`** (`startTime === endTime ===
+photoTakenTime`). Files without a `photoTakenTime` at all (album metadata,
+sharing settings, print-order receipts — Takeout ships plenty of non-photo
+`.json` alongside the real sidecars) are silently skipped via a duck-type
+check, no filename allowlist needed.
+
+That's the exact same `Visit` shape `joinVisits()` already consumes for
+Timeline imports — **no spatial-join changes were needed at all**. `dropzone.ts`
+routes to this path for anything that isn't a single Timeline-shaped `.json`:
+multiple files, or a folder (walked recursively via the drag-and-drop
+`DataTransferItem.webkitGetAsEntry()` API — the only way to get a real
+directory tree from a browser drop; the `<input type="file">` fallback instead
+just gets `multiple` so a user can multi-select sidecar files by hand).
+
+Like Sports Venues, this is **manual-only** in spirit but arrives through the
+normal import pipeline: Photos and Timeline data get merged together via the
+existing `mergeVisited()` (additive/union), so importing one after the other
+never loses anything, and importing the same export twice is a no-op past the
+first time (`joinVisits()`'s bucket-dedup already collapses repeat
+coordinates before doing the expensive polygon/city lookups, so a Photos
+library with the same few home-city coordinates repeated thousands of times
+costs about the same as one Timeline visit to that city).
 
 ### Reference data & ID schemes (`src/geo/datasets.ts`)
 
