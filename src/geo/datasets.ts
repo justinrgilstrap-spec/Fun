@@ -201,23 +201,59 @@ export function cityExtremes(visited: Iterable<string>): Extremes | null {
 
 export interface Furthest {
   name: string;
-  km: number;
+  miles: number;
+}
+
+const KM_TO_MILES = 0.621371;
+
+/**
+ * The top `count` visited cities furthest (great-circle) from home, descending
+ * by distance. Returns [] without a home pin, before `loadCities()` resolves,
+ * or with no visited cities. Reuses the city point coords + `@turf/distance`
+ * (already a dependency); reported in miles.
+ */
+export function furthestCities(
+  home: HomePoint | undefined,
+  visited: Iterable<string>,
+  count = 5,
+): Furthest[] {
+  if (!home || !cities) return [];
+  const set = visited instanceof Set ? visited : new Set(visited);
+  const from = turfPoint([home.lon, home.lat]);
+  const all: Furthest[] = [];
+  for (const f of cities.features) {
+    if (!set.has(cityId(f))) continue;
+    all.push({ name: cityName(f), miles: distance(from, f, { units: "kilometers" }) * KM_TO_MILES });
+  }
+  all.sort((a, b) => b.miles - a.miles);
+  return all.slice(0, count);
+}
+
+export interface FurthestPair {
+  a: string;
+  b: string;
+  miles: number;
 }
 
 /**
- * The visited city furthest (great-circle) from home. Returns null without a home
- * pin, before `loadCities()` resolves, or with no visited cities. Reuses the city
- * point coords + `@turf/distance` (already a dependency).
+ * The single furthest-apart pair among visited cities (great-circle), in
+ * miles. O(n^2) over visited cities — fine at personal-tracker scale (a
+ * few hundred visited cities is still instant). Returns null with fewer
+ * than 2 visited cities, or before `loadCities()` resolves.
  */
-export function furthestCity(home: HomePoint | undefined, visited: Iterable<string>): Furthest | null {
-  if (!home || !cities) return null;
+export function maxCityDistance(visited: Iterable<string>): FurthestPair | null {
+  if (!cities) return null;
   const set = visited instanceof Set ? visited : new Set(visited);
-  const from = turfPoint([home.lon, home.lat]);
-  let best: Furthest | null = null;
+  const pts: { name: string; feature: Feature<Point> }[] = [];
   for (const f of cities.features) {
-    if (!set.has(cityId(f))) continue;
-    const km = distance(from, f, { units: "kilometers" });
-    if (!best || km > best.km) best = { name: cityName(f), km };
+    if (set.has(cityId(f))) pts.push({ name: cityName(f), feature: f });
+  }
+  let best: FurthestPair | null = null;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const miles = distance(pts[i].feature, pts[j].feature, { units: "kilometers" }) * KM_TO_MILES;
+      if (!best || miles > best.miles) best = { a: pts[i].name, b: pts[j].name, miles };
+    }
   }
   return best;
 }

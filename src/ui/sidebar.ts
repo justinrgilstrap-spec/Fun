@@ -1,4 +1,4 @@
-import type { ContinentCount, Extremes, Furthest } from "../geo/datasets";
+import type { ContinentCount, Extremes, Furthest, FurthestPair } from "../geo/datasets";
 
 interface Stats {
   countries: number;
@@ -14,8 +14,12 @@ interface Stats {
   continentBreakdown: ContinentCount[];
   /** Compass extremes of visited cities; null until the cities dataset loads. */
   extremes: Extremes | null;
-  /** Furthest visited city from home; null without a home or before cities load. */
-  furthest: Furthest | null;
+  /** Top 5 furthest visited cities from home, descending; [] without a home
+   *  or before cities load. */
+  furthest: Furthest[];
+  /** The single furthest-apart pair of visited cities; null with fewer than
+   *  2 visited cities or before cities load. */
+  maxDistance: FurthestPair | null;
 }
 
 // Display abbreviations for the two long continent names — keeps chips compact in
@@ -92,13 +96,33 @@ function extremesSection(ex: Extremes | null): string {
   `;
 }
 
-function furthestSection(f: Furthest | null): string {
-  if (!f) return "";
-  const km = Math.round(f.km).toLocaleString();
+function furthestSection(list: Furthest[]): string {
+  if (list.length === 0) return "";
+  const rows = list
+    .map(
+      (f, i) => `
+      <div class="furthest-row">
+        <span class="furthest-rank">${i + 1}</span>
+        <span class="furthest-name">${escapeHtml(f.name)}</span>
+        <span class="furthest-dist">${Math.round(f.miles).toLocaleString()} mi</span>
+      </div>`,
+    )
+    .join("");
   return `
-    <div class="furthest">
-      <span class="furthest-label">Furthest from home</span>
-      <span class="furthest-value">${escapeHtml(f.name)} · ${km} km</span>
+    <div class="furthest-section">
+      <h3 class="stat-subhead">Furthest from home</h3>
+      <div class="furthest-list">${rows}</div>
+    </div>
+  `;
+}
+
+function maxDistanceSection(pair: FurthestPair | null): string {
+  if (!pair) return "";
+  const miles = Math.round(pair.miles).toLocaleString();
+  return `
+    <div class="max-distance">
+      <span class="max-distance-label">Furthest apart</span>
+      <span class="max-distance-value">${escapeHtml(pair.a)} \u2194 ${escapeHtml(pair.b)} · ${miles} mi</span>
     </div>
   `;
 }
@@ -132,5 +156,6 @@ export function renderStats(el: HTMLElement, stats: Stats): void {
     </div>
     ${extremesSection(stats.extremes)}
     ${furthestSection(stats.furthest)}
+    ${maxDistanceSection(stats.maxDistance)}
   `;
 }
