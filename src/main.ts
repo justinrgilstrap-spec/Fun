@@ -448,7 +448,7 @@ function joinClauses(parts: string[]): string {
 
 setupDropzone(dropzoneEl, fileInput, async (result, fileName) => {
   if (result.visits.length === 0 && result.points.length === 0) {
-    showToast(`No visits found in ${fileName} — is it a Google Timeline export?`, {
+    showToast(`No visits found in ${fileName} — is it a Google Timeline export or a Google Photos folder?`, {
       variant: "error",
       duration: 7000,
     });

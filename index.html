@@ -82,11 +82,11 @@
              so stats lead. On first run stats/toggles are hidden, so the dropzone
              still sits right under the header. -->
         <section id="dropzone" class="dropzone">
-          <p>Drop your Google Timeline JSON here</p>
-          <p class="hint">or <label class="link">click to choose a file<input type="file" id="file-input" accept=".json,application/json" hidden /></label></p>
+          <p>Drop your Google Timeline JSON, or a Google Photos folder</p>
+          <p class="hint">or <label class="link">click to choose files<input type="file" id="file-input" accept=".json,application/json" multiple hidden /></label></p>
         </section>
         <section id="onboarding" class="onboarding">
-          <p class="onboarding-lead">Footprint lights up every country, region, and city you've visited — straight from your Google Maps Timeline. Drop your export above to begin.</p>
+          <p class="onboarding-lead">Footprint lights up every country, region, and city you've visited — straight from your Google Maps Timeline, or your Google Photos library. Drop an export above to begin.</p>
           <details class="onboarding-how">
             <summary>How do I get my Timeline file?</summary>
             <div class="onboarding-how-body">
@@ -97,6 +97,18 @@
                 <li>Move that file to this computer, then drop it above.</li>
               </ol>
               <p class="onboarding-note">More detail in <a href="https://support.google.com/maps/answer/6258979" target="_blank" rel="noopener noreferrer">Google's Timeline help</a>.</p>
+            </div>
+          </details>
+          <details class="onboarding-how">
+            <summary>How do I get my Google Photos location data?</summary>
+            <div class="onboarding-how-body">
+              <p>Use <a href="https://takeout.google.com" target="_blank" rel="noopener noreferrer">Google Takeout</a> to export just Photos:</p>
+              <ol>
+                <li>At <strong>takeout.google.com</strong>, click <strong>Deselect all</strong>, then check only <strong>Google Photos</strong>.</li>
+                <li>Export, download, and unzip the archive on this computer.</li>
+                <li>Drag the whole <strong>Google Photos</strong> folder from inside it onto the dropzone above (or use "click to choose files" to multi-select the <code>.json</code> files directly).</li>
+              </ol>
+              <p class="onboarding-note">Only each photo's location and timestamp are read — nothing is uploaded, and the actual photo/video files are ignored.</p>
             </div>
           </details>
         </section>
