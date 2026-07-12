@@ -6,14 +6,14 @@ import { setupDropzone } from "./import/dropzone";
 import { joinVisits, nearestCity } from "./geo/spatialJoin";
 import { loadVisited, saveVisited, saveRawImport, mergeVisited, isTauri } from "./store/visitedFile";
 import { createMap, setMapTheme, setProjection, type MapTheme, type MapProjection } from "./map/map";
-import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setHomeHandler, setHomePoint, flyToFeature, openFeaturePopup } from "./map/layers";
+import { initLayers, setLayer, applyLayer, initInteractions, setToggleHandler, setVenueStateHandler, setHomeHandler, setHomePoint, flyToFeature, openFeaturePopup } from "./map/layers";
 import { renderStats } from "./ui/sidebar";
 import { initSearch } from "./ui/search";
 import { initChecklist } from "./ui/checklist";
 import { showToast } from "./ui/toast";
 import { saveSnapshot } from "./ui/snapshot";
 import { countCountries, countContinents, countsByContinent, cityExtremes, furthestCities, maxCityDistance, loadCities } from "./geo/datasets";
-import type { LayerKind, VisitedFile } from "./types";
+import type { LayerKind, BinaryLayerKind, VenueState, VisitedFile } from "./types";
 
 const THEME_KEY = "footprint.theme";
 const SIDEBAR_KEY = "footprint.sidebar";
@@ -136,7 +136,7 @@ const onMapReady = new Promise<void>((resolve) => {
 // settle at the wrong dimensions before MapLibre's internal observer fires.
 new ResizeObserver(() => map.resize()).observe(mapEl);
 
-let current: VisitedFile = { countries: [], states: [], cities: [], parks: [], updatedAt: 0 };
+let current: VisitedFile = { countries: [], states: [], cities: [], parks: [], fbs: {}, fcs: {}, mlb: [], updatedAt: 0 };
 
 // US states use ISO 3166-2 "US-XX" codes; DC isn't a state, so it's excluded.
 // Returns null when none are visited, which hides the U.S. progress row.
@@ -148,12 +148,26 @@ function countUsStates(states: string[]): number | null {
   return n > 0 ? n : null;
 }
 
+// Uniform "is this id visited" check across all LayerKinds, used by search
+// results and the checklist. fbs/fcs are tri-state records (presence of the
+// key means visited, regardless of which of the 3 states), everything else is
+// a plain string[] membership check.
+function isVisitedAny(kind: LayerKind, id: string): boolean {
+  if (kind === "fbs") return id in current.fbs;
+  if (kind === "fcs") return id in current.fcs;
+  return current[kind].includes(id);
+}
+
 function statsFrom(file: VisitedFile) {
   return {
     countries: countCountries(file.countries),
     states: file.states.length,
     cities: file.cities.length,
     parks: file.parks.length,
+    // Any of the 3 VenueStates counts toward the totalizer — "been to campus"
+    // still means the stadium's been visited, same as "been to a game there".
+    // FCS/MLB deliberately have no equivalent stat (search/mark-only, per Justin).
+    fbs: Object.keys(file.fbs).length,
     continents: countContinents(file.countries),
     usStates: countUsStates(file.states),
     continentBreakdown: countsByContinent(file.countries),
@@ -167,7 +181,8 @@ async function renderFromCurrent() {
   // Toggle the empty-state onboarding up front (before the map finishes loading)
   // so first-run guidance shows immediately; hidden as soon as any data exists.
   const hasData =
-    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0;
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0 ||
+    Object.keys(current.fbs).length > 0 || Object.keys(current.fcs).length > 0 || current.mlb.length > 0;
   appEl.setAttribute("data-empty", hasData ? "false" : "true");
   if (!mapReady) await onMapReady;
   await initLayers(map, {
@@ -175,6 +190,9 @@ async function renderFromCurrent() {
     visitedStates: new Set(current.states),
     visitedCities: new Set(current.cities),
     visitedParks: new Set(current.parks),
+    visitedMlb: new Set(current.mlb),
+    fbsState: new Map(Object.entries(current.fbs) as [string, VenueState][]),
+    fcsState: new Map(Object.entries(current.fcs) as [string, VenueState][]),
   });
   if (hasData) {
     renderStats(statsEl, statsFrom(current));
@@ -228,6 +246,9 @@ async function setHome(lng: number, lat: number): Promise<void> {
     states: current.states,
     cities: current.cities,
     parks: current.parks,
+    fbs: current.fbs,
+    fcs: current.fcs,
+    mlb: current.mlb,
     home,
   });
   await renderFromCurrent();
@@ -239,7 +260,7 @@ async function setHome(lng: number, lat: number): Promise<void> {
 // values match the VisitedFile keys 1:1, so `kind` indexes the set directly.
 // `saveVisited` is desktop-only and the toggle button is hidden in the browser,
 // so this never runs in read-only mode. Returns the new visited state.
-async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
+async function toggleVisited(kind: BinaryLayerKind, id: string): Promise<boolean> {
   const set = new Set(current[kind]);
   const nowVisited = !set.has(id);
   if (nowVisited) set.add(id);
@@ -249,10 +270,37 @@ async function toggleVisited(kind: LayerKind, id: string): Promise<boolean> {
     states: kind === "states" ? [...set] : current.states,
     cities: kind === "cities" ? [...set] : current.cities,
     parks: kind === "parks" ? [...set] : current.parks,
+    fbs: current.fbs,
+    fcs: current.fcs,
+    mlb: kind === "mlb" ? [...set] : current.mlb,
     home: current.home,
   });
   await renderFromCurrent();
   return nowVisited;
+}
+
+// Sports Venues (FBS/FCS) tri-state equivalent of toggleVisited: sets `id`'s
+// VenueState, or clears it if it's already set to `state` (re-picking the
+// active option undoes it — same "click again to unmark" idea the binary
+// toggle uses, just with 3 options instead of 1). Returns the new state, or
+// null if cleared.
+async function setVenueState(kind: "fbs" | "fcs", id: string, state: VenueState): Promise<VenueState | null> {
+  const record = { ...current[kind] };
+  const cleared = record[id] === state;
+  if (cleared) delete record[id];
+  else record[id] = state;
+  current = await saveVisited({
+    countries: current.countries,
+    states: current.states,
+    cities: current.cities,
+    parks: current.parks,
+    fbs: kind === "fbs" ? record : current.fbs,
+    fcs: kind === "fcs" ? record : current.fcs,
+    mlb: current.mlb,
+    home: current.home,
+  });
+  await renderFromCurrent();
+  return cleared ? null : state;
 }
 
 async function bootstrap() {
@@ -268,6 +316,7 @@ async function bootstrap() {
   await renderFromCurrent();
   initInteractions(map);
   setToggleHandler(toggleVisited);
+  setVenueStateHandler(setVenueState);
   setHomeHandler(setHome);
   // Background-prefetch the cities dataset so the city-coordinate stats (extremes,
   // and later furthest-from-home) can compute. Until it resolves `cityExtremes`
@@ -284,7 +333,8 @@ async function prefetchCityStats() {
     return;
   }
   const hasData =
-    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0;
+    current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0 ||
+    Object.keys(current.fbs).length > 0 || Object.keys(current.fcs).length > 0 || current.mlb.length > 0;
   if (hasData) renderStats(statsEl, statsFrom(current));
 }
 
@@ -403,7 +453,7 @@ layerInputs.forEach((input) => {
 // so a selection switches to that result's view, flies to it, and opens the
 // standard inspect popup (with the write-mode "Mark visited" button on desktop).
 initSearch({
-  isVisited: (kind, id) => current[kind].includes(id),
+  isVisited: isVisitedAny,
   onSelect: async (hit) => {
     // On mobile the sidebar overlays the whole map — get it out of the way.
     if (isMobile()) {
@@ -425,8 +475,10 @@ initSearch({
 // map-click + search only). Every checkbox is just another door into the
 // same toggleVisited() persistence the map popups use.
 const checklist = initChecklist({
-  isVisited: (kind, id) => current[kind].includes(id),
+  isVisited: isVisitedAny,
   onToggle: toggleVisited,
+  venueState: (kind, id) => current[kind][id],
+  onSetVenueState: setVenueState,
   canToggle: isTauri,
 });
 

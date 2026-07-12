@@ -113,6 +113,10 @@ Render, above). Each feature is reduced to a stable ID used as the "visited" key
 - **City:** composite `ADM0_A3|ADM1NAME|NAMEASCII`.
 - **National Park:** `UNIT_CODE`, the NPS 4-letter unit code (e.g. `YELL`) — no
   fallback needed, it's the boundary dataset's own stable primary key.
+- **FBS/FCS school, MLB team:** `SCHOOL_ID`/`TEAM_ID`, a slug generated when
+  `public/data/{fbs,fcs,mlb}.json` were built (lowercased, non-alphanumerics
+  to hyphens, e.g. `north-carolina`, `new-york-yankees`) — stable as long as
+  the dataset isn't regenerated with different slugging.
 
 `countCountries()` collapses **dependent territories onto their parent**
 (via the `TERRITORY_PARENT` map) so the headline "Countries" stat counts sovereign
@@ -150,6 +154,60 @@ countries/states, geometric simplification hasn't been ruled out here (see
 "Decided against" — that decision was about Natural Earth data specifically);
 worth revisiting with `mapshaper` if the bundle size becomes a problem, since
 this is cadastral-grade precision doing a basemap's job.
+
+### Sports Venues layers (`public/data/{fbs,fcs,mlb}.json`)
+
+Three more views: FBS Stadiums, FCS Stadiums, MLB Stadiums. Unlike every other
+layer, these are **manual-only** — there's no spatial join. Driving past a
+stadium (or even parking at one) isn't evidence of "been to a game there" the
+way a Timeline visit is decent evidence of "been to this city," so
+`mergeVisited()` in `src/store/visitedFile.ts` carries `fbs`/`fcs`/`mlb`
+through an import untouched, same as `home`.
+
+FBS and FCS are also the app's only **3-way** visited state (everything else
+is a binary on/off `string[]`): `VisitedFile.fbs`/`.fcs` are
+`Record<schoolId, "campus" | "stadium" | "game">`, keyed by presence (no entry
+= unvisited). Picking a state replaces any prior one for that school;
+re-picking the active state clears it (`setVenueState()` in `src/main.ts`).
+Map pins and checklist rows both color/label by state — yellow = campus,
+blue = stadium, purple = game (`VENUE_COLOR` in `src/map/layers.ts`,
+`checklist-venue-btn.is-active:nth-child()` in `src/ui/styles.css` — the two
+are not derived from one shared constant, so a color change needs both edited).
+MLB is a plain binary `string[]` like parks/cities ("been to a game there" or
+not) — no campus/stadium distinction.
+
+Only **FBS** counts toward a sidebar stat ("FBS Stadiums X / 138" — any of the
+3 states counts). FCS and MLB are deliberately search/checklist/map-only, per
+Justin: he wants to browse and mark the full FCS and MLB universes but doesn't
+want them inflating the headline numbers the way National Parks/Countries do.
+
+The checklist tab for FBS/FCS groups schools by conference (alphabetical,
+schools alphabetical within) instead of one flat list — see `buildEntries()`
+in `src/ui/checklist.ts`. MLB's checklist tab is flat, like Countries/Parks.
+
+Provenance: stadium coordinates for 250 of the 268 schools/teams came from
+[gboeing/data-visualization](https://github.com/gboeing/data-visualization)'s
+`ncaa-football-stadiums/data/stadiums-geocoded.csv` (FBS/FCS) and
+[michaelminn.net's 2019 MLB ballparks GeoJSON](https://michaelminn.net/tutorials/data/2019-mlb-ballparks.geojson),
+both cross-checked and corrected against current conference realignment and
+stadium name/location changes (Rangers → Globe Life Field, Braves → Truist
+Park, Brewers → American Family Field, White Sox → Rate Field, Athletics →
+Sutter Health Park pending the Las Vegas move, Rays confirmed back at a
+repaired Tropicana Field for 2026). The remaining ~18 schools — mostly recent
+FBS/FCS reclassifications (Delaware, Missouri State, Sacramento State, UAB,
+Chicago State, Lindenwood, Mercyhurst, etc.) that predate or postdate that
+CSV's snapshot — were geocoded individually to city/campus precision, which is
+consistent with the app's existing precision elsewhere (the home pin is
+snapped to a city centroid, never raw GPS).
+
+FBS conference membership reflects the 2026 season, including realignment that
+took effect this year (Boise State/Colorado State/Fresno State/San Diego
+State/Texas State/Utah State → Pac-12; Northern Illinois/UTEP → Mountain West;
+Louisiana Tech → Sun Belt, though that move is the subject of pending
+litigation between Louisiana Tech and Conference USA as of this writing).
+Conference realignment is a moving target most seasons — if a school looks off,
+it's very possibly changed conferences again; re-verify against a current
+source rather than assuming the app is wrong.
 
 ## Storage locations
 
