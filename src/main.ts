@@ -397,7 +397,16 @@ async function prefetchCityStats() {
   const hasData =
     current.countries.length > 0 || current.states.length > 0 || current.cities.length > 0 || current.parks.length > 0 ||
     Object.keys(current.fbs).length > 0 || Object.keys(current.fcs).length > 0 || current.mlb.length > 0;
-  if (hasData) renderStats(statsEl, statsFrom(current));
+  const stats = statsFrom(current);
+  if (hasData) renderStats(statsEl, stats);
+  // renderFromCurrent() already tried this once, right after bootstrap — but
+  // that first call almost always runs before this very prefetch resolves, so
+  // cityExtremes()/furthestCities()/maxCityDistance() all came back empty
+  // (they need `cities` loaded) and no markers got placed. This is what
+  // actually puts them on the map for a normal session where the user doesn't
+  // happen to toggle/import anything (which is the only other thing that
+  // re-runs renderFromCurrent(), and with it updateSpecialMarkers()).
+  updateSpecialMarkers(stats);
 }
 
 async function prefetchFbsStats() {
