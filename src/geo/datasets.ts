@@ -233,6 +233,9 @@ export function cityExtremes(visited: Iterable<string>): Extremes | null {
 export interface Furthest {
   name: string;
   miles: number;
+  /** City coordinates — lets the map drop a marker at each Top-5 entry. */
+  lat: number;
+  lon: number;
 }
 
 const KM_TO_MILES = 0.621371;
@@ -254,7 +257,8 @@ export function furthestCities(
   const all: Furthest[] = [];
   for (const f of cities.features) {
     if (!set.has(cityId(f))) continue;
-    all.push({ name: cityName(f), miles: distance(from, f, { units: "kilometers" }) * KM_TO_MILES });
+    const [lon, lat] = f.geometry.coordinates;
+    all.push({ name: cityName(f), miles: distance(from, f, { units: "kilometers" }) * KM_TO_MILES, lat, lon });
   }
   all.sort((a, b) => b.miles - a.miles);
   return all.slice(0, count);
@@ -264,6 +268,11 @@ export interface FurthestPair {
   a: string;
   b: string;
   miles: number;
+  /** Coordinates of each end — lets the map drop a marker at both cities. */
+  aLat: number;
+  aLon: number;
+  bLat: number;
+  bLon: number;
 }
 
 /**
@@ -283,7 +292,11 @@ export function maxCityDistance(visited: Iterable<string>): FurthestPair | null 
   for (let i = 0; i < pts.length; i++) {
     for (let j = i + 1; j < pts.length; j++) {
       const miles = distance(pts[i].feature, pts[j].feature, { units: "kilometers" }) * KM_TO_MILES;
-      if (!best || miles > best.miles) best = { a: pts[i].name, b: pts[j].name, miles };
+      if (!best || miles > best.miles) {
+        const [aLon, aLat] = pts[i].feature.geometry.coordinates;
+        const [bLon, bLat] = pts[j].feature.geometry.coordinates;
+        best = { a: pts[i].name, b: pts[j].name, miles, aLat, aLon, bLat, bLon };
+      }
     }
   }
   return best;
