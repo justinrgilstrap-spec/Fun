@@ -84,25 +84,39 @@ function progressRow(label: string, value: number, total: number): string {
   `;
 }
 
+// Compass-direction emoji, standing in for the old plain N/S/E/W letters —
+// arrows read fine without needing to track the map's live rotation, since
+// they're describing the abstract compass point, not the current view.
+const DIR_ICON: Record<"north" | "south" | "east" | "west", string> = {
+  north: "⬆️",
+  south: "⬇️",
+  east: "➡️",
+  west: "⬅️",
+};
+
 function extremesSection(ex: Extremes | null): string {
   if (!ex) return "";
-  const row = (dir: string, place: string) => `
+  const row = (dir: keyof typeof DIR_ICON, label: string, place: string) => `
     <div class="extreme-row">
-      <span class="extreme-dir">${dir}</span>
+      <span class="extreme-dir" title="${label}" aria-label="${label}">${DIR_ICON[dir]}</span>
       <span class="extreme-place">${escapeHtml(place)}</span>
     </div>`;
   return `
     <div class="extremes-section">
-      <h3 class="stat-subhead">Extremes</h3>
+      <h3 class="stat-subhead">Extremes 🧭</h3>
       <div class="extremes">
-        ${row("N", ex.north.name)}
-        ${row("S", ex.south.name)}
-        ${row("E", ex.east.name)}
-        ${row("W", ex.west.name)}
+        ${row("north", "North", ex.north.name)}
+        ${row("south", "South", ex.south.name)}
+        ${row("east", "East", ex.east.name)}
+        ${row("west", "West", ex.west.name)}
       </div>
     </div>
   `;
 }
+
+// Medals for the top 3, keycap digits for 4-5 -- the list is capped at 5
+// (see furthestCities() in src/geo/datasets.ts), so this never needs a 6th.
+const RANK_ICON = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
 
 function furthestSection(list: Furthest[]): string {
   if (list.length === 0) return "";
@@ -110,7 +124,7 @@ function furthestSection(list: Furthest[]): string {
     .map(
       (f, i) => `
       <div class="furthest-row">
-        <span class="furthest-rank">${i + 1}</span>
+        <span class="furthest-rank">${RANK_ICON[i] ?? String(i + 1)}</span>
         <span class="furthest-name">${escapeHtml(f.name)}</span>
         <span class="furthest-dist">${Math.round(f.miles).toLocaleString()} mi</span>
       </div>`,
@@ -118,7 +132,7 @@ function furthestSection(list: Furthest[]): string {
     .join("");
   return `
     <div class="furthest-section">
-      <h3 class="stat-subhead">Furthest from home</h3>
+      <h3 class="stat-subhead">Furthest from home ✈️</h3>
       <div class="furthest-list">${rows}</div>
     </div>
   `;
@@ -129,8 +143,8 @@ function maxDistanceSection(pair: FurthestPair | null): string {
   const miles = Math.round(pair.miles).toLocaleString();
   return `
     <div class="max-distance">
-      <span class="max-distance-label">Furthest apart</span>
-      <span class="max-distance-value">${escapeHtml(pair.a)} \u2194 ${escapeHtml(pair.b)} · ${miles} mi</span>
+      <span class="max-distance-label">Furthest apart 🌐</span>
+      <span class="max-distance-value">📍 ${escapeHtml(pair.a)} \u2194 📍 ${escapeHtml(pair.b)} · ${miles} mi</span>
     </div>
   `;
 }
